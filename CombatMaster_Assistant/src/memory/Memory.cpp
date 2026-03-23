@@ -29,7 +29,7 @@ bool Memory::Attach(const std::wstring& processName) {
                 hProcess = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, processId);
                 
                 if (!hProcess) {
-                    Logger::Error("Found process but Failed to open handle to " + std::string(processName.begin(), processName.end()));
+                    Logger::Error("Found process but Failed to open handle.");
                     break;
                 }
 
