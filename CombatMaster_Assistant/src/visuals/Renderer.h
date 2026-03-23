@@ -1,11 +1,13 @@
 #pragma once
 #include <windows.h>
 #include <d3d9.h>
+#include <dwmapi.h>
 #include <imgui.h>
 #include <backends/imgui_impl_win32.h>
 #include <backends/imgui_impl_dx9.h>
 #include <string>
 
+#include "WorldToScreen.h"
 #include "../ui/Menu.h"
 #include "../ui/Theme.h"
 #include "ESP.h"
@@ -178,7 +180,7 @@ public:
         SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
         SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 0, LWA_COLORKEY); // Transparent clear color
         
-        MARGINS margins = { -1 };
+        MARGINS margins = { -1, -1, -1, -1 };
         DwmExtendFrameIntoClientArea(hwnd, &margins);
 
         if (!InitD3D(hwnd)) {

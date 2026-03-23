@@ -17,7 +17,7 @@ public:
         return mem.Read<FRotator>(playerController + Offsets::PLAYERCONTROLLER_CONTROLROTATION);
     }
 
-    void SetControlRotation(const FRotator& rot) {
+    void SetControlRotation(const FRotator& rot) const {
         mem.Write<FRotator>(playerController + Offsets::PLAYERCONTROLLER_CONTROLROTATION, rot);
     }
     

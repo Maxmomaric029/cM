@@ -3,13 +3,14 @@
 #include "../ui/Config.h"
 #include <windows.h>
 #include <vector>
+#include "../visuals/WorldToScreen.h"
 
 namespace Aimbot {
     inline Entity* GetBestTarget(const std::vector<Entity>& players, const LocalPlayer& localPlayer, const Camera& camera, int screenWidth, int screenHeight) {
         Entity* bestTarget = nullptr;
         float bestFov = Config::aimbot_fov;
         
-        FVector cameraLoc = camera.GetViewMatrix().m[3]; // Not exactly translation but a close enough approximation from the matrix row 3 or actual camera pos if we read it
+        FVector cameraLoc(camera.GetViewMatrix().m[3][0], camera.GetViewMatrix().m[3][1], camera.GetViewMatrix().m[3][2]); // Not exactly translation but a close enough approximation from the matrix row 3 or actual camera pos if we read it
         // A better approach is to read the camera pos explicitly. For now we use world to screen distance to crosshair.
         
         ImVec2 center(screenWidth / 2.0f, screenHeight / 2.0f);
