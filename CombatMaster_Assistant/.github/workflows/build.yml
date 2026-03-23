@@ -13,25 +13,40 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - name: Discover Working Directory
+      id: setdir
+      run: |
+        if (Test-Path "CombatMaster_Assistant\CMakeLists.txt") {
+            echo "workdir=CombatMaster_Assistant" >> $env:GITHUB_ENV
+        } elseif (Test-Path "combatMaster_assistant\CMakeLists.txt") {
+            echo "workdir=combatMaster_assistant" >> $env:GITHUB_ENV
+        } else {
+            echo "workdir=." >> $env:GITHUB_ENV
+        }
+
     - name: Download imgui
+      working-directory: ${{ env.workdir }}
       run: |
         git clone -b docking https://github.com/ocornut/imgui.git include/imgui
       
     - name: Download nlohmann json
+      working-directory: ${{ env.workdir }}
       run: |
         mkdir include\nlohmann
         curl -L https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp -o include/nlohmann/json.hpp
         
     - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -A x64
+      working-directory: ${{ env.workdir }}
+      run: cmake -B build -A x64
 
     - name: Build
-      run: cmake --build ${{github.workspace}}/build --config Release
+      working-directory: ${{ env.workdir }}
+      run: cmake --build build --config Release
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v3
       with:
         name: CombatMaster_Assistant
         path: |
-          ${{github.workspace}}/build/Release/CombatMaster_Assistant.exe
-          ${{github.workspace}}/build/Release/resources/config.json
+          ${{ env.workdir }}/build/Release/CombatMaster_Assistant.exe
+          ${{ env.workdir }}/build/Release/resources/config.json
