@@ -1,0 +1,25 @@
+{
+    "aimbot": {
+        "enabled": false,
+        "fov": 15.0,
+        "smooth": 5.0,
+        "prediction": false
+    },
+    "esp": {
+        "enabled": true,
+        "boxes": true,
+        "names": true,
+        "health": true,
+        "lines": false,
+        "distance": true,
+        "max_distance": 200.0,
+        "colors": {
+            "enemy": [1.0, 0.0, 0.0, 1.0],
+            "team": [0.0, 1.0, 0.0, 1.0]
+        }
+    },
+    "triggerbot": {
+        "enabled": false,
+        "delay": 100
+    }
+}

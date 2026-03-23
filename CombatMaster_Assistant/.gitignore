@@ -1,0 +1,10 @@
+build/
+.vs/
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.suo
+*.user
+include/imgui/
+include/nlohmann/

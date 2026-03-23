@@ -1,0 +1,37 @@
+name: Build C++ Application
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Download imgui
+      run: |
+        git clone -b docking https://github.com/ocornut/imgui.git include/imgui
+      
+    - name: Download nlohmann json
+      run: |
+        mkdir include\nlohmann
+        curl -L https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp -o include/nlohmann/json.hpp
+        
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -A x64
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config Release
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: CombatMaster_Assistant
+        path: |
+          ${{github.workspace}}/build/Release/CombatMaster_Assistant.exe
+          ${{github.workspace}}/build/Release/resources/config.json
