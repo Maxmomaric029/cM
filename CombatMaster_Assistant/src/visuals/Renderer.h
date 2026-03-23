@@ -2,8 +2,8 @@
 #include <windows.h>
 #include <d3d9.h>
 #include <imgui.h>
-#include <imgui_impl_win32.h>
-#include <imgui_impl_dx9.h>
+#include <backends/imgui_impl_win32.h>
+#include <backends/imgui_impl_dx9.h>
 #include <string>
 
 #include "../ui/Menu.h"
@@ -135,7 +135,9 @@ private:
                 }
 
                 if (Config::esp_names) {
-                    std::string narrowName(player.GetPlayerName().begin(), player.GetPlayerName().end());
+                    std::wstring wname = player.GetPlayerName();
+                    std::string narrowName;
+                    for (wchar_t c : wname) narrowName.push_back(static_cast<char>(c));
                     ESP::DrawTextCentered(narrowName, screenPos.X, y - 15, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
                 }
 
