@@ -1,10 +1,11 @@
 #pragma once
 #include <windows.h>
-#include <d3d9.h>
-#include <dwmapi.h>
+#include <d3d11.h>
+#include <dxgi.h>
+#include <MinHook.h>
 #include <imgui.h>
 #include <backends/imgui_impl_win32.h>
-#include <backends/imgui_impl_dx9.h>
+#include <backends/imgui_impl_dx11.h>
 #include <string>
 #include <cmath>
 
@@ -14,63 +15,92 @@
 #include "ESP.h"
 #include "../game/Game.h"
 #include "../utils/Hotkeys.h"
-#include "../targeting/Aimbot.h"
-#include "../targeting/Triggerbot.h"
-#include "../utils/ImageLoader.h"
+#include "../targeting/aimassist.h"
+#include "../targeting/assittrigger.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+typedef HRESULT(__stdcall* Present_t)(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags);
+typedef LRESULT(CALLBACK* WNDPROC_t)(HWND, UINT, WPARAM, LPARAM);
+
 class Renderer {
 private:
-    HWND hwnd = nullptr;
-    IDirect3D9* pD3D = nullptr;
-    IDirect3DDevice9* pd3dDevice = nullptr;
-    D3DPRESENT_PARAMETERS d3dpp = {};
+    Present_t oPresent = nullptr;
+    WNDPROC_t oWndProc = nullptr;
+    HWND window = nullptr;
+    ID3D11Device* pDevice = nullptr;
+    ID3D11DeviceContext* pContext = nullptr;
+    ID3D11RenderTargetView* mainRenderTargetView = nullptr;
+    bool initImgui = false;
+    
     int screenWidth = 0;
     int screenHeight = 0;
-    IDirect3DTexture9* logoTexture = nullptr;
 
-    static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
-            return true;
+    Renderer() {}
 
-        switch (msg) {
-        case WM_SIZE:
-            return 0;
-        case WM_SYSCOMMAND:
-            if ((wParam & 0xfff0) == SC_KEYMENU) return 0; 
-            break;
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            return 0;
+    static LRESULT __stdcall WndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+        if (Menu::bShowMenu) {
+            ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
+            // Block game input when menu is open
+            if (uMsg == WM_MOUSEMOVE || uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONUP || uMsg == WM_RBUTTONDOWN || uMsg == WM_RBUTTONUP || uMsg == WM_mousewheel)
+                return true;
         }
-        return DefWindowProc(hWnd, msg, wParam, lParam);
+        
+        if (Hotkeys::WasKeyPressed(VK_INSERT) || (uMsg == WM_KEYDOWN && wParam == VK_INSERT)) {
+            Menu::bShowMenu = !Menu::bShowMenu;
+            return true;
+        }
+
+        return CallWindowProc(Get().oWndProc, hWnd, uMsg, wParam, lParam);
     }
 
-    bool InitD3D(HWND hWnd) {
-        if ((pD3D = Direct3DCreate9(D3D_SDK_VERSION)) == nullptr)
-            return false;
+    static HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags) {
+        auto& renderer = Get();
 
-        ZeroMemory(&d3dpp, sizeof(d3dpp));
-        d3dpp.Windowed = TRUE;
-        d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
-        d3dpp.BackBufferFormat = D3DFMT_A8R8G8B8;
-        d3dpp.EnableAutoDepthStencil = TRUE;
-        d3dpp.AutoDepthStencilFormat = D3DFMT_D16;
-        d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
+        if (!renderer.initImgui) {
+            if (SUCCEEDED(pSwapChain->GetDevice(__uuidof(ID3D11Device), (void**)&renderer.pDevice))) {
+                renderer.pDevice->GetImmediateContext(&renderer.pContext);
+                DXGI_SWAP_CHAIN_DESC sd;
+                pSwapChain->GetDesc(&sd);
+                renderer.window = sd.OutputWindow;
+                
+                renderer.screenWidth = GetSystemMetrics(SM_CXSCREEN);
+                renderer.screenHeight = GetSystemMetrics(SM_CYSCREEN);
 
-        if (pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hWnd, D3DCREATE_HARDWARE_VERTEXPROCESSING, &d3dpp, &pd3dDevice) < 0)
-            return false;
+                ID3D11Texture2D* pBackBuffer;
+                pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer);
+                renderer.pDevice->CreateRenderTargetView(pBackBuffer, NULL, &renderer.mainRenderTargetView);
+                pBackBuffer->Release();
 
-        return true;
+                renderer.oWndProc = (WNDPROC_t)SetWindowLongPtr(renderer.window, GWLP_WNDPROC, (LONG_PTR)WndProc);
+                
+                IMGUI_CHECKVERSION();
+                ImGui::CreateContext();
+                Theme::Apply();
+
+                ImGui_ImplWin32_Init(renderer.window);
+                ImGui_ImplDX11_Init(renderer.pDevice, renderer.pContext);
+                
+                renderer.initImgui = true;
+            } else {
+                return renderer.oPresent(pSwapChain, SyncInterval, Flags);
+            }
+        }
+
+        ImGui_ImplDX11_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+
+        renderer.DrawCheat();
+        Menu::Draw(nullptr);
+
+        ImGui::Render();
+        renderer.pContext->OMSetRenderTargets(1, &renderer.mainRenderTargetView, NULL);
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+        return renderer.oPresent(pSwapChain, SyncInterval, Flags);
     }
 
-    void CleanupDeviceD3D() {
-        if (logoTexture) { logoTexture->Release(); logoTexture = nullptr; }
-        if (pd3dDevice) { pd3dDevice->Release(); pd3dDevice = nullptr; }
-        if (pD3D) { pD3D->Release(); pD3D = nullptr; }
-    }
-    
     void DrawOffScreenArrow(const FVector& targetLoc, const Camera& camera, ImU32 color) {
         FVector camLoc = camera.GetLocation();
         FRotator camRot = camera.GetRotation();
@@ -99,7 +129,7 @@ private:
         ImGui::GetBackgroundDrawList()->AddTriangleFilled(p1, p2, p3, color);
     }
 
-    void DrawESP() {
+    void DrawCheat() {
         if (!Config::esp_enabled) return;
         
         Game game;
@@ -108,23 +138,10 @@ private:
         LocalPlayer localPlayer = game.GetLocalPlayer();
         Camera camera = game.GetCamera();
         
-        if (!localPlayer.IsValid() || !camera.IsValid()) {
-            static DWORD lastEspLog = 0;
-            if (GetTickCount() - lastEspLog > 5000) {
-                Logger::Error("[ESP] Core entities invalid. LocalPlayer: " + std::to_string(localPlayer.IsValid()) + " | Camera: " + std::to_string(camera.IsValid()));
-                lastEspLog = GetTickCount();
-            }
-            return;
-        }
+        if (!localPlayer.IsValid() || !camera.IsValid()) return;
         
         auto players = game.GetPlayers();
         int localTeam = localPlayer.GetTeamId();
-        
-        static DWORD lastPlayerLog = 0;
-        if (GetTickCount() - lastPlayerLog > 5000) {
-            Logger::Log("[ESP] Tracking target entities: " + std::to_string(players.size()) + " (Filtered from general actors)");
-            lastPlayerLog = GetTickCount();
-        }
         
         std::optional<Entity> aimTarget = std::nullopt;
         
@@ -136,7 +153,8 @@ private:
             }
             
             if (Config::triggerbot_enabled) {
-                Triggerbot::Run(aimTarget.has_value() && Hotkeys::IsPressed(VK_RBUTTON));
+                // Modified triggerbot to pass crosshair and menu info
+                Triggerbot::Run(aimTarget.has_value() && Hotkeys::IsPressed(VK_RBUTTON), Menu::bShowMenu);
             }
         }
         
@@ -158,23 +176,15 @@ private:
             if (dist > Config::esp_max_distance) continue;
             
             if (Visuals::WorldToScreen(location, camera, screenWidth, screenHeight, screenPos)) {
-                
-                if (screenPos.X < -500 || screenPos.X > screenWidth + 500 || screenPos.Y < -500 || screenPos.Y > screenHeight + 500) {
-                    continue; 
-                }
+                if (screenPos.X < -500 || screenPos.X > screenWidth + 500 || screenPos.Y < -500 || screenPos.Y > screenHeight + 500) continue; 
 
                 float h = 10000.0f / screenPos.Z; 
                 float w = h / 2.0f;
                 float x = screenPos.X - (w / 2.0f);
                 float y = screenPos.Y - h;
 
-                if (Config::esp_boxes) {
-                    ESP::DrawCornerBox(x, y, w, h, color, 1.5f);
-                }
-
-                if (Config::esp_health) {
-                    ESP::DrawHealthBar(x - 6, y, 3, h, health, player.GetMaxHealth());
-                }
+                if (Config::esp_boxes) ESP::DrawCornerBox(x, y, w, h, color, 1.5f);
+                if (Config::esp_health) ESP::DrawHealthBar(x - 6, y, 3, h, health, player.GetMaxHealth());
 
                 if (Config::esp_names) {
                     std::wstring wname = player.GetPlayerName();
@@ -192,13 +202,9 @@ private:
                     ESP::DrawTextCentered(distStr, screenPos.X, y + h + 4, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
                 }
 
-                if (Config::esp_lines) {
-                    ESP::DrawLine(screenWidth / 2, screenHeight, screenPos.X, screenPos.Y + h, color, 1.5f);
-                }
+                if (Config::esp_lines) ESP::DrawLine(screenWidth / 2, screenHeight, screenPos.X, screenPos.Y + h, color, 1.5f);
             } else {
-                if (!isTeam) { 
-                     DrawOffScreenArrow(location, camera, color);
-                }
+                if (!isTeam) DrawOffScreenArrow(location, camera, color);
             }
         }
         
@@ -208,123 +214,63 @@ private:
     }
 
 public:
-    int Run() {
-        screenWidth = GetSystemMetrics(SM_CXSCREEN);
-        screenHeight = GetSystemMetrics(SM_CYSCREEN);
+    static Renderer& Get() {
+        static Renderer instance;
+        return instance;
+    }
 
-        WNDCLASSEXW wc = { sizeof(WNDCLASSEXW), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"Overlay", nullptr };
-        ::RegisterClassExW(&wc);
-        hwnd = ::CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW,
-            wc.lpszClassName, L"Nexus Overlay", WS_POPUP, 
-            0, 0, screenWidth, screenHeight, nullptr, nullptr, wc.hInstance, nullptr);
+    void Init() {
+        if (MH_Initialize() != MH_OK) {
+             Logger::Error("MinHook failed to initialize");
+             return;
+        }
 
-        SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
-        SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 0, LWA_COLORKEY); 
+        D3D_FEATURE_LEVEL featureLevel;
+        const D3D_FEATURE_LEVEL featureLevels[] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1 };
         
-        MARGINS margins = { -1, -1, -1, -1 };
-        DwmExtendFrameIntoClientArea(hwnd, &margins);
+        DXGI_SWAP_CHAIN_DESC sd;
+        ZeroMemory(&sd, sizeof(sd));
+        sd.BufferCount = 1;
+        sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        sd.OutputWindow = GetDesktopWindow(); 
+        sd.SampleDesc.Count = 1;
+        sd.Windowed = TRUE;
+        sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
-        if (!InitD3D(hwnd)) {
-            CleanupDeviceD3D();
-            ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
-            return 1;
+        IDXGISwapChain* swapChain = nullptr;
+        ID3D11Device* device = nullptr;
+        ID3D11DeviceContext* context = nullptr;
+
+        if (FAILED(D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, featureLevels, 2, 
+                D3D11_SDK_VERSION, &sd, &swapChain, &device, &featureLevel, &context))) 
+        {
+             Logger::Error("Failed to create dummy D3D11 device. The game might be running DX12 or another API.");
+             return;
         }
 
-        ::ShowWindow(hwnd, SW_SHOWDEFAULT);
-        ::UpdateWindow(hwnd);
+        void** pVTable = *reinterpret_cast<void***>(swapChain);
+        void* targetPresent = pVTable[8]; 
 
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO(); (void)io;
+        swapChain->Release();
+        device->Release();
+        context->Release();
+
+        if (MH_CreateHook(targetPresent, &hkPresent, reinterpret_cast<void**>(&oPresent)) != MH_OK) {
+             Logger::Error("Failed to create hook for Present");
+             return;
+        }
+
+        if (MH_EnableHook(targetPresent) != MH_OK) {
+             Logger::Error("Failed to enable hook for Present");
+             return;
+        }
         
-        // Advanced Custom Font Loading Strategy
-        ImFontConfig font_cfg;
-        font_cfg.OversampleH = 2;
-        font_cfg.OversampleV = 2;
-
-        if (GetFileAttributesA("fonts/Roboto-Medium.ttf") != INVALID_FILE_ATTRIBUTES) {
-            io.Fonts->AddFontFromFileTTF("fonts/Roboto-Medium.ttf", 16.0f, &font_cfg); // Base Text Font
-        } else {
-            // Fallback if missing
-            io.Fonts->AddFontDefault();
+        Logger::Log("DX11 Present hooked successfully!");
+        
+        // Wait permanently so the DLL thread doesn't exit until unloading
+        while(true) {
+            Sleep(100);
         }
-
-        // Texture Loading for Menu Logo
-        ImageLoader::LoadTextureFromFile("images/logo.png", pd3dDevice, &logoTexture, nullptr, nullptr);
-
-        Theme::Apply();
-
-        ImGui_ImplWin32_Init(hwnd);
-        ImGui_ImplDX9_Init(pd3dDevice);
-
-        bool done = false;
-        while (!done) {
-            MSG msg;
-            while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
-                ::TranslateMessage(&msg);
-                ::DispatchMessage(&msg);
-                if (msg.message == WM_QUIT)
-                    done = true;
-            }
-            if (done) break;
-
-            if (Hotkeys::WasKeyPressed(VK_INSERT)) {
-                Menu::bShowMenu = !Menu::bShowMenu;
-                
-                long style = GetWindowLong(hwnd, GWL_EXSTYLE);
-                if (Menu::bShowMenu) {
-                    style &= ~WS_EX_TRANSPARENT;
-                    SetForegroundWindow(hwnd);
-                } else {
-                    style |= WS_EX_TRANSPARENT;
-                }
-                SetWindowLong(hwnd, GWL_EXSTYLE, style);
-            }
-
-            ImGui_ImplDX9_NewFrame();
-            ImGui_ImplWin32_NewFrame();
-            ImGui::NewFrame();
-
-            if (!Memory::Get().IsAttached()) {
-                static DWORD lastAttachTime = 0;
-                if (GetTickCount() - lastAttachTime > 2000) {
-                    Memory::Get().Attach(L"CombatMaster.exe");
-                    lastAttachTime = GetTickCount();
-                }
-            } else {
-                DrawESP();
-            }
-
-            // Draw Menu, passing the logo texture id (could be null, handled inside Menu::Draw)
-            Menu::Draw((ImTextureID)logoTexture);
-
-            ImGui::EndFrame();
-
-            pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
-            pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-            pd3dDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
-            D3DCOLOR clear_col_dx = D3DCOLOR_RGBA(0, 0, 0, 0);
-            pd3dDevice->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
-
-            if (pd3dDevice->BeginScene() >= 0) {
-                ImGui::Render();
-                ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
-                pd3dDevice->EndScene();
-            }
-            HRESULT result = pd3dDevice->Present(nullptr, nullptr, nullptr, nullptr);
-            if (result == D3DERR_DEVICELOST && pd3dDevice->TestCooperativeLevel() == D3DERR_DEVICENOTRESET)
-                pd3dDevice->Reset(&d3dpp);
-        }
-
-        ImGui_ImplDX9_Shutdown();
-        ImGui_ImplWin32_Shutdown();
-        ImGui::DestroyContext();
-
-        CleanupDeviceD3D();
-        ::DestroyWindow(hwnd);
-        ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
-
-        return 0;
     }
 };

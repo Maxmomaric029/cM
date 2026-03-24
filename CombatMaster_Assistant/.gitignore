@@ -6,5 +6,3 @@ build/
 *.obj
 *.suo
 *.user
-include/imgui/
-include/nlohmann/
