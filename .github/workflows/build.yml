@@ -46,7 +46,7 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: CombatMaster_Assistant
+        name: Nexus_Overlay
         path: |
-          ${{ env.workdir }}/build/Release/CombatMaster_Assistant.exe
+          ${{ env.workdir }}/build/Release/Nexus_Overlay.exe
           ${{ env.workdir }}/build/Release/resources/config.json
