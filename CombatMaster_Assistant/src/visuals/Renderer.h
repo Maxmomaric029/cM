@@ -13,7 +13,7 @@
 #include "../ui/Menu.h"
 #include "../ui/Theme.h"
 #include "ESP.h"
-#include "../game/Game.h"
+
 #include "../utils/Hotkeys.h"
 #include "../targeting/aimassist.h"
 #include "../targeting/assittrigger.h"
