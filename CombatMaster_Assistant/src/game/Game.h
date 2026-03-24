@@ -15,19 +15,34 @@ public:
     bool Update() {
         auto& mem = Memory::Get();
         uWorld = mem.Read<uintptr_t>(mem.GetBaseAddress() + Offsets::GWORLD_OFFSET);
-        if (!uWorld) return false;
+        if (!uWorld) {
+            static bool loggedW = false; if (!loggedW) { Logger::Error("[Game::Update] Failed to read UWorld. Is GWORLD_OFFSET (" + std::to_string(Offsets::GWORLD_OFFSET) + ") correct?"); loggedW = true; }
+            return false;
+        }
 
         gameInstance = mem.Read<uintptr_t>(uWorld + Offsets::UWORLD_OWNINGGAMEINSTANCE);
-        if (!gameInstance) return false;
+        if (!gameInstance) {
+            static bool loggedI = false; if (!loggedI) { Logger::Error("[Game::Update] Failed to read GameInstance at UWorld + " + std::to_string(Offsets::UWORLD_OWNINGGAMEINSTANCE)); loggedI = true; }
+            return false;
+        }
 
         uintptr_t localPlayersArray = mem.Read<uintptr_t>(gameInstance + Offsets::GAMEINSTANCE_LOCALPLAYERS);
-        if (!localPlayersArray) return false;
+        if (!localPlayersArray) {
+            static bool loggedL = false; if (!loggedL) { Logger::Error("[Game::Update] Failed to read LocalPlayersArray"); loggedL = true; }
+            return false;
+        }
 
         localPlayerPtr = mem.Read<uintptr_t>(localPlayersArray); // First local player
-        if (!localPlayerPtr) return false;
+        if (!localPlayerPtr) {
+            static bool loggedP = false; if (!loggedP) { Logger::Error("[Game::Update] Failed to read LocalPlayer[0]"); loggedP = true; }
+            return false;
+        }
 
         playerController = mem.Read<uintptr_t>(localPlayerPtr + Offsets::LOCALPLAYER_PLAYERCONTROLLER);
-        if (!playerController) return false;
+        if (!playerController) {
+            static bool loggedC = false; if (!loggedC) { Logger::Error("[Game::Update] Failed to read PlayerController"); loggedC = true; }
+            return false;
+        }
 
         return true;
     }
@@ -53,7 +68,10 @@ public:
         if (!uWorld) return players;
         
         uintptr_t persistentLevel = mem.Read<uintptr_t>(uWorld + Offsets::UWORLD_PERSISTENTLEVEL);
-        if (!persistentLevel) return players;
+        if (!persistentLevel) {
+            static bool loggedPL = false; if (!loggedPL) { Logger::Error("[Game::GetPlayers] Failed to read PersistentLevel"); loggedPL = true; }
+            return players;
+        }
         
         uintptr_t actorsArray = mem.Read<uintptr_t>(persistentLevel + Offsets::ULEVEL_ACTORS);
         int actorCount = mem.Read<int>(persistentLevel + Offsets::ULEVEL_ACTORCOUNT);
@@ -64,7 +82,15 @@ public:
             debugged = true;
         }
 
-        if (!actorsArray || actorCount <= 0 || actorCount > 10000) return players;
+        if (!actorsArray) {
+            static bool loggedA = false; if (!loggedA) { Logger::Error("[Game::GetPlayers] Failed to read ActorsArray"); loggedA = true; }
+            return players;
+        }
+
+        if (actorCount <= 0 || actorCount > 10000) {
+            static bool loggedC = false; if (!loggedC) { Logger::Error("[Game::GetPlayers] Invalid ActorCount: " + std::to_string(actorCount) + " (Max: 10000). Check ULEVEL_ACTORCOUNT offset."); loggedC = true; }
+            return players;
+        }
         
         for (int i = 0; i < actorCount; i++) {
             uintptr_t actor = mem.Read<uintptr_t>(actorsArray + (i * 8));
