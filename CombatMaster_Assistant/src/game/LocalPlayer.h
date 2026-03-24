@@ -14,18 +14,18 @@ public:
     }
 
     FRotator GetControlRotation() const {
-        return mem.Read<FRotator>(playerController + Offsets::PLAYERCONTROLLER_CONTROLROTATION);
+        return Memory::Get().Read<FRotator>(playerController + Offsets::PLAYERCONTROLLER_CONTROLROTATION);
     }
 
     void SetControlRotation(const FRotator& rot) const {
-        mem.Write<FRotator>(playerController + Offsets::PLAYERCONTROLLER_CONTROLROTATION, rot);
+        Memory::Get().Write<FRotator>(playerController + Offsets::PLAYERCONTROLLER_CONTROLROTATION, rot);
     }
     
     int GetAmmo() const {
         if (!IsValid()) return 0;
-        uintptr_t currentWeapon = mem.Read<uintptr_t>(address + Offsets::PAWN_CURRENTWEAPON);
+        uintptr_t currentWeapon = Memory::Get().Read<uintptr_t>(address + Offsets::PAWN_CURRENTWEAPON);
         if (!currentWeapon) return 0;
         
-        return mem.Read<int>(currentWeapon + Offsets::WEAPON_AMMO);
+        return Memory::Get().Read<int>(currentWeapon + Offsets::WEAPON_AMMO);
     }
 };

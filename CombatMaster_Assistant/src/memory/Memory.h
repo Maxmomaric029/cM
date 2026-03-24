@@ -8,10 +8,19 @@ private:
     HANDLE hProcess = nullptr;
     DWORD processId = 0;
     uintptr_t moduleBase = 0;
+    Memory() = default;
+    Memory(const Memory&) = delete;
+    Memory& operator=(const Memory&) = delete;
 
 public:
-    Memory() = default;
     ~Memory();
+
+    static Memory& Get() {
+        static Memory instance;
+        return instance;
+    }
+
+    bool IsAttached() const { return hProcess != nullptr; }
 
     bool Attach(const std::wstring& processName);
     uintptr_t GetModuleBase(const std::wstring& moduleName);
@@ -40,4 +49,3 @@ public:
     std::vector<uintptr_t> FindAllPatterns(uintptr_t base, size_t size, const char* pattern, const char* mask);
 };
 
-extern Memory mem;

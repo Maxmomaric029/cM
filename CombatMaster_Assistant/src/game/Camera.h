@@ -15,6 +15,6 @@ public:
     }
 
     FMatrix GetViewMatrix() const {
-        return mem.Read<FMatrix>(cameraManager + Offsets::CAMERAMANAGER_VIEWMATRIX);
+        return Memory::Get().Read<FMatrix>(cameraManager + Offsets::CAMERAMANAGER_VIEWMATRIX);
     }
 };

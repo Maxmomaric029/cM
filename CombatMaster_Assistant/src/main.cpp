@@ -12,13 +12,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     Config::Load("config.json");
 
-    Logger::Log("Waiting for Combat Master...");
-    while (!mem.Attach(L"CombatMaster.exe")) {
-        Sleep(1000);
-    }
-    Logger::Log("Attached to Combat Master successfully!");
+    Logger::Log("Starting Overlay. Will auto-attach to Combat Master when opening.");
 
-    // Start overlay and menu blocking the main thread
+    Renderer renderer;
     renderer.Run();
 
 #ifdef _DEBUG

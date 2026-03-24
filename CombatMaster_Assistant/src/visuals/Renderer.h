@@ -73,6 +73,7 @@ private:
     void DrawESP() {
         if (!Config::esp_enabled) return;
         
+        Game game;
         if (!game.Update()) return;
         
         LocalPlayer localPlayer = game.GetLocalPlayer();
@@ -83,19 +84,19 @@ private:
         auto players = game.GetPlayers();
         int localTeam = localPlayer.GetTeamId();
         
-        Entity* aimTarget = nullptr;
+        std::optional<Entity> aimTarget = std::nullopt;
         
         if (Config::aimbot_enabled || Config::triggerbot_enabled) {
             aimTarget = Aimbot::GetBestTarget(players, localPlayer, camera, screenWidth, screenHeight);
             
-            if (aimTarget && Config::aimbot_enabled && Hotkeys::IsPressed(VK_RBUTTON)) { // Aim when right click is pressed
+            if (aimTarget.has_value() && Config::aimbot_enabled && Hotkeys::IsPressed(VK_RBUTTON)) { // Aim when right click is pressed
                 Aimbot::AimAt(aimTarget->GetLocation(), localPlayer, camera);
             }
             
             if (Config::triggerbot_enabled) {
                 // If aimbot has a target, we are generally aiming at them.
                 // Could be improved to trace from crosshair explicitly
-                Triggerbot::Run(aimTarget != nullptr && Hotkeys::IsPressed(VK_RBUTTON));
+                Triggerbot::Run(aimTarget.has_value() && Hotkeys::IsPressed(VK_RBUTTON));
             }
         }
         
@@ -138,9 +139,12 @@ private:
 
                 if (Config::esp_names) {
                     std::wstring wname = player.GetPlayerName();
-                    std::string narrowName;
-                    for (wchar_t c : wname) narrowName.push_back(static_cast<char>(c));
-                    ESP::DrawTextCentered(narrowName, screenPos.X, y - 15, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
+                    if (!wname.empty()) {
+                        int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wname[0], (int)wname.size(), NULL, 0, NULL, NULL);
+                        std::string narrowName(size_needed, 0);
+                        WideCharToMultiByte(CP_UTF8, 0, &wname[0], (int)wname.size(), &narrowName[0], size_needed, NULL, NULL);
+                        ESP::DrawTextCentered(narrowName, screenPos.X, y - 15, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
+                    }
                 }
 
                 if (Config::esp_distance) {
@@ -158,10 +162,6 @@ private:
         // Draw FOV Circle
         if (Config::aimbot_enabled && Menu::bShowMenu) {
              ImGui::GetBackgroundDrawList()->AddCircle(ImVec2(screenWidth / 2.0f, screenHeight / 2.0f), Config::aimbot_fov * 5.0f, ImGui::GetColorU32(ImVec4(1,1,1,0.5f)), 64);
-        }
-        
-        if (aimTarget) {
-            delete aimTarget;
         }
     }
 
@@ -235,7 +235,15 @@ public:
             ImGui_ImplWin32_NewFrame();
             ImGui::NewFrame();
 
-            DrawESP();
+            if (!Memory::Get().IsAttached()) {
+                static DWORD lastAttachTime = 0;
+                if (GetTickCount() - lastAttachTime > 2000) {
+                    Memory::Get().Attach(L"CombatMaster.exe");
+                    lastAttachTime = GetTickCount();
+                }
+            } else {
+                DrawESP();
+            }
 
             if (Menu::bShowMenu) {
                 Menu::Draw();
@@ -270,5 +278,3 @@ public:
         return 0;
     }
 };
-
-inline Renderer renderer;

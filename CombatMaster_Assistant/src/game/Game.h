@@ -13,6 +13,7 @@ private:
 
 public:
     bool Update() {
+        auto& mem = Memory::Get();
         uintptr_t gWorldPtr = mem.Read<uintptr_t>(mem.GetBaseAddress() + Offsets::GWORLD_OFFSET);
         if (!gWorldPtr) return false;
 
@@ -37,19 +38,20 @@ public:
     LocalPlayer GetLocalPlayer() const {
         if (!playerController) return LocalPlayer(0, 0);
         
-        uintptr_t pawn = mem.Read<uintptr_t>(playerController + Offsets::PLAYERCONTROLLER_PAWN);
+        uintptr_t pawn = Memory::Get().Read<uintptr_t>(playerController + Offsets::PLAYERCONTROLLER_PAWN);
         return LocalPlayer(pawn, playerController);
     }
 
     Camera GetCamera() const {
         if (!playerController) return Camera(0);
         
-        uintptr_t cameraManager = mem.Read<uintptr_t>(playerController + Offsets::PLAYERCONTROLLER_CAMERAMANAGER);
+        uintptr_t cameraManager = Memory::Get().Read<uintptr_t>(playerController + Offsets::PLAYERCONTROLLER_CAMERAMANAGER);
         return Camera(cameraManager);
     }
 
     std::vector<Entity> GetPlayers() const {
         std::vector<Entity> players;
+        auto& mem = Memory::Get();
         
         if (!uWorld) return players;
         
@@ -75,5 +77,3 @@ public:
         return players;
     }
 };
-
-inline Game game;

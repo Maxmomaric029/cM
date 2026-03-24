@@ -14,27 +14,27 @@ bool Entity::IsValid() const {
 
 float Entity::GetHealth() const {
     if (!IsValid()) return 0.0f;
-    return mem.Read<float>(address + Offsets::ACTOR_HEALTH);
+    return Memory::Get().Read<float>(address + Offsets::ACTOR_HEALTH);
 }
 
 float Entity::GetMaxHealth() const {
     if (!IsValid()) return 100.0f;
-    float maxHealth = mem.Read<float>(address + Offsets::ACTOR_HEALTH_MAX);
+    float maxHealth = Memory::Get().Read<float>(address + Offsets::ACTOR_HEALTH_MAX);
     return maxHealth > 0.0f ? maxHealth : 100.0f; // Prevent div by 0 just in case
 }
 
 int Entity::GetTeamId() const {
     if (!IsValid()) return 255;
-    return mem.Read<int>(address + Offsets::ACTOR_TEAMID);
+    return Memory::Get().Read<int>(address + Offsets::ACTOR_TEAMID);
 }
 
 std::wstring Entity::GetPlayerName() const {
     if (!IsValid()) return L"Unknown";
     
-    uintptr_t playerState = mem.Read<uintptr_t>(address + Offsets::CONTROLLER_PLAYERSTATE);
+    uintptr_t playerState = Memory::Get().Read<uintptr_t>(address + Offsets::CONTROLLER_PLAYERSTATE);
     if (!playerState) return L"Unknown";
     
-    std::wstring name = mem.ReadFString(playerState + Offsets::PLAYERSTATE_PLAYERNAME);
+    std::wstring name = Memory::Get().ReadFString(playerState + Offsets::PLAYERSTATE_PLAYERNAME);
     if (name.empty()) return L"Unknown";
     
     return name;
@@ -43,14 +43,14 @@ std::wstring Entity::GetPlayerName() const {
 FVector Entity::GetLocation() const {
     if (!IsValid()) return FVector();
     
-    uintptr_t rootComponent = mem.Read<uintptr_t>(address + Offsets::ACTOR_ROOTCOMPONENT);
+    uintptr_t rootComponent = Memory::Get().Read<uintptr_t>(address + Offsets::ACTOR_ROOTCOMPONENT);
     if (!rootComponent) return FVector();
     
-    return mem.Read<FVector>(rootComponent + Offsets::COMPONENT_WORLDLOCATION);
+    return Memory::Get().Read<FVector>(rootComponent + Offsets::COMPONENT_WORLDLOCATION);
 }
 
 FVector Entity::GetVelocity() const {
     if (!IsValid()) return FVector();
     
-    return mem.Read<FVector>(address + Offsets::PAWN_VELOCITY);
+    return Memory::Get().Read<FVector>(address + Offsets::PAWN_VELOCITY);
 }

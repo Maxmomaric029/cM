@@ -2,7 +2,6 @@
 #include <TlHelp32.h>
 #include "../utils/Logger.h"
 
-Memory mem;
 
 Memory::~Memory() {
     if (hProcess) {
@@ -12,6 +11,11 @@ Memory::~Memory() {
 }
 
 bool Memory::Attach(const std::wstring& processName) {
+    if (hProcess) {
+        CloseHandle(hProcess);
+        hProcess = nullptr;
+    }
+
     PROCESSENTRY32W entry;
     entry.dwSize = sizeof(entry);
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);

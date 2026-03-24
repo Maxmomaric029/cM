@@ -3,11 +3,12 @@
 #include "../ui/Config.h"
 #include <windows.h>
 #include <vector>
+#include <optional>
 #include "../visuals/WorldToScreen.h"
 
 namespace Aimbot {
-    inline Entity* GetBestTarget(const std::vector<Entity>& players, const LocalPlayer& localPlayer, const Camera& camera, int screenWidth, int screenHeight) {
-        Entity* bestTarget = nullptr;
+    inline std::optional<Entity> GetBestTarget(const std::vector<Entity>& players, const LocalPlayer& localPlayer, const Camera& camera, int screenWidth, int screenHeight) {
+        std::optional<Entity> bestTarget = std::nullopt;
         float bestFov = Config::aimbot_fov;
         
         FVector cameraLoc(camera.GetViewMatrix().m[3][0], camera.GetViewMatrix().m[3][1], camera.GetViewMatrix().m[3][2]); // Not exactly translation but a close enough approximation from the matrix row 3 or actual camera pos if we read it
@@ -42,7 +43,7 @@ namespace Aimbot {
                 
                 if (fovMapping < bestFov) {
                     bestFov = fovMapping;
-                    bestTarget = new Entity(player); // Memory leak in a loop but just for conceptual return, returning copy is better
+                    bestTarget = player; 
                 }
             }
         }
