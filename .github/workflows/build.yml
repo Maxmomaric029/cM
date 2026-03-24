@@ -9,23 +9,33 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    
-    defaults:
-      run:
-        working-directory: ./CombatMaster_Assistant
 
     steps:
     - uses: actions/checkout@v4
 
+    - name: Discover Working Directory
+      id: setdir
+      run: |
+        if (Test-Path "CombatMaster_Assistant\CMakeLists.txt") {
+            echo "workdir=CombatMaster_Assistant" >> $env:GITHUB_ENV
+        } elseif (Test-Path "combatMaster_assistant\CMakeLists.txt") {
+            echo "workdir=combatMaster_assistant" >> $env:GITHUB_ENV
+        } else {
+            echo "workdir=." >> $env:GITHUB_ENV
+        }
+
     - name: Download imgui
+      working-directory: ${{ env.workdir }}
       run: |
         Remove-Item -Recurse -Force include/imgui -ErrorAction Ignore
         git clone -b docking https://github.com/ocornut/imgui.git include/imgui
 
     - name: Configure CMake
+      working-directory: ${{ env.workdir }}
       run: cmake -B build -A x64
 
     - name: Build
+      working-directory: ${{ env.workdir }}
       run: cmake --build build --config Release
 
     - name: Upload Artifact
@@ -33,4 +43,4 @@ jobs:
       with:
         name: Nexus_Internal_DLL
         path: |
-          CombatMaster_Assistant/build/Release/Nexus_Internal.dll
+          ${{ env.workdir }}/build/Release/Nexus_Internal.dll
