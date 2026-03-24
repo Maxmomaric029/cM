@@ -6,6 +6,7 @@
 #include <backends/imgui_impl_win32.h>
 #include <backends/imgui_impl_dx9.h>
 #include <string>
+#include <cmath>
 
 #include "WorldToScreen.h"
 #include "../ui/Menu.h"
@@ -33,9 +34,6 @@ private:
 
         switch (msg) {
         case WM_SIZE:
-            if (wParam != SIZE_MINIMIZED && false) {
-                // Handle resize here if needed
-            }
             return 0;
         case WM_SYSCOMMAND:
             if ((wParam & 0xfff0) == SC_KEYMENU) return 0; // Disable ALT application menu
@@ -69,6 +67,37 @@ private:
         if (pd3dDevice) { pd3dDevice->Release(); pd3dDevice = nullptr; }
         if (pD3D) { pD3D->Release(); pD3D = nullptr; }
     }
+    
+    // Draw an off-screen directional arrow indicating enemy position
+    void DrawOffScreenArrow(const FVector& targetLoc, const Camera& camera, ImU32 color) {
+        FVector camLoc = camera.GetLocation();
+        FRotator camRot = camera.GetRotation();
+        
+        float deltaX = targetLoc.X - camLoc.X;
+        float deltaY = targetLoc.Y - camLoc.Y;
+        float dist = std::sqrt(deltaX*deltaX + deltaY*deltaY);
+        if (dist < 100.0f) return;
+        
+        float angleToTarget = std::atan2(deltaY, deltaX);
+        float camYawRad = camRot.Yaw * (M_PI / 180.0f);
+        
+        float diff = angleToTarget - camYawRad;
+        
+        // Normalize diff
+        while (diff > M_PI) diff -= 2 * M_PI;
+        while (diff < -M_PI) diff += 2 * M_PI;
+        
+        float radius = screenHeight / 3.0f; // Radius of the off-screen ring
+        float drawX = (screenWidth / 2.0f) + radius * std::sin(diff);
+        float drawY = (screenHeight / 2.0f) - radius * std::cos(diff);
+        
+        // Draw triangle indicator
+        ImVec2 p1(drawX + 15 * std::sin(diff), drawY - 15 * std::cos(diff));
+        ImVec2 p2(drawX + 10 * std::sin(diff + 2.3f), drawY - 10 * std::cos(diff + 2.3f));
+        ImVec2 p3(drawX + 10 * std::sin(diff - 2.3f), drawY - 10 * std::cos(diff - 2.3f));
+        
+        ImGui::GetBackgroundDrawList()->AddTriangleFilled(p1, p2, p3, color);
+    }
 
     void DrawESP() {
         if (!Config::esp_enabled) return;
@@ -89,19 +118,15 @@ private:
         if (Config::aimbot_enabled || Config::triggerbot_enabled) {
             aimTarget = Aimbot::GetBestTarget(players, localPlayer, camera, screenWidth, screenHeight);
             
-            if (aimTarget.has_value() && Config::aimbot_enabled && Hotkeys::IsPressed(VK_RBUTTON)) { // Aim when right click is pressed
+            if (aimTarget.has_value() && Config::aimbot_enabled && Hotkeys::IsPressed(VK_RBUTTON)) { 
                 Aimbot::AimAt(aimTarget->GetLocation(), localPlayer, camera);
             }
             
             if (Config::triggerbot_enabled) {
-                // If aimbot has a target, we are generally aiming at them.
-                // Could be improved to trace from crosshair explicitly
                 Triggerbot::Run(aimTarget.has_value() && Hotkeys::IsPressed(VK_RBUTTON));
             }
         }
         
-        FMatrix viewMatrix = camera.GetViewMatrix();
-
         for (auto& player : players) {
             if (player.GetAddress() == localPlayer.GetAddress()) continue;
             
@@ -116,15 +141,18 @@ private:
             FVector location = player.GetLocation();
             FVector screenPos;
             
-            if (Visuals::WorldToScreen(location, viewMatrix, screenWidth, screenHeight, screenPos)) {
+            float dist = location.Distance(localPlayer.GetLocation()) / 100.0f; // Scale distance
+            if (dist > Config::esp_max_distance) continue;
+            
+            // WorldToScreen projection
+            if (Visuals::WorldToScreen(location, camera, screenWidth, screenHeight, screenPos)) {
                 
-                // Crude distance calculation
-                float dist = location.Distance(localPlayer.GetLocation()) / 100.0f; // Scale distance (UE units are cm usually)
-                
-                if (dist > Config::esp_max_distance) continue;
+                // Advanced Screen Bounds Filtering
+                if (screenPos.X < -500 || screenPos.X > screenWidth + 500 || screenPos.Y < -500 || screenPos.Y > screenHeight + 500) {
+                    continue; // Cull invisible boxes entirely to save draw calls
+                }
 
-                // Estimate height/width based on distance and standard player size
-                float h = 10000.0f / screenPos.Z; // simplified scaling
+                float h = 10000.0f / screenPos.Z; 
                 float w = h / 2.0f;
                 float x = screenPos.X - (w / 2.0f);
                 float y = screenPos.Y - h;
@@ -134,7 +162,7 @@ private:
                 }
 
                 if (Config::esp_health) {
-                    ESP::DrawHealthBar(x - 5, y, 3, h, health, player.GetMaxHealth());
+                    ESP::DrawHealthBar(x - 6, y, 3, h, health, player.GetMaxHealth());
                 }
 
                 if (Config::esp_names) {
@@ -143,25 +171,30 @@ private:
                         int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wname[0], (int)wname.size(), NULL, 0, NULL, NULL);
                         std::string narrowName(size_needed, 0);
                         WideCharToMultiByte(CP_UTF8, 0, &wname[0], (int)wname.size(), &narrowName[0], size_needed, NULL, NULL);
-                        ESP::DrawTextCentered(narrowName, screenPos.X, y - 15, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
+                        ESP::DrawTextCentered(narrowName, screenPos.X, y - 16, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
                     }
                 }
 
                 if (Config::esp_distance) {
                     char distStr[32];
                     sprintf_s(distStr, "%.1fm", dist);
-                    ESP::DrawTextCentered(distStr, screenPos.X, y + h + 2, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
+                    ESP::DrawTextCentered(distStr, screenPos.X, y + h + 4, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
                 }
 
                 if (Config::esp_lines) {
-                    ESP::DrawLine(screenWidth / 2, screenHeight, screenPos.X, screenPos.Y, color, 1.0f);
+                    ESP::DrawLine(screenWidth / 2, screenHeight, screenPos.X, screenPos.Y + h, color, 1.5f);
+                }
+            } else {
+                // Feature: Draw arrow offscreen for out of frustum enemies
+                if (!isTeam) { // Only draw enemy arrows
+                     DrawOffScreenArrow(location, camera, color);
                 }
             }
         }
         
-        // Draw FOV Circle
+        // Draw Custom Precision FOV Circle
         if (Config::aimbot_enabled && Menu::bShowMenu) {
-             ImGui::GetBackgroundDrawList()->AddCircle(ImVec2(screenWidth / 2.0f, screenHeight / 2.0f), Config::aimbot_fov * 5.0f, ImGui::GetColorU32(ImVec4(1,1,1,0.5f)), 64);
+             ImGui::GetBackgroundDrawList()->AddCircle(ImVec2(screenWidth / 2.0f, screenHeight / 2.0f), Config::aimbot_fov * 5.0f, ImGui::GetColorU32(ImVec4(0, 1, 1, 0.4f)), 64, 1.0f);
         }
     }
 
@@ -178,7 +211,7 @@ public:
             0, 0, screenWidth, screenHeight, nullptr, nullptr, wc.hInstance, nullptr);
 
         SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
-        SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 0, LWA_COLORKEY); // Transparent clear color
+        SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 0, LWA_COLORKEY); 
         
         MARGINS margins = { -1, -1, -1, -1 };
         DwmExtendFrameIntoClientArea(hwnd, &margins);
@@ -196,12 +229,6 @@ public:
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO(); (void)io;
         
-        // Load custom font (placeholder if doesn't exist)
-        io.Fonts->AddFontFromFileTTF("fonts/Roboto-Medium.ttf", 16.0f);
-        if (!io.Fonts->Fonts.Size) {
-            io.Fonts->AddFontDefault();
-        }
-
         Theme::Apply();
 
         ImGui_ImplWin32_Init(hwnd);

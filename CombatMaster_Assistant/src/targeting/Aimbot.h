@@ -5,54 +5,130 @@
 #include <vector>
 #include <optional>
 #include "../visuals/WorldToScreen.h"
+#include <algorithm>
 
 namespace Aimbot {
+
+    // Advanced Prediction & Physics Engine
+    struct PredictionContext {
+        float TimeToHit;
+        FVector PredictedLocation;
+        float GravityDrop;
+        
+        PredictionContext() : TimeToHit(0.0f), PredictedLocation(), GravityDrop(0.0f) {}
+    };
+
+    inline PredictionContext CalculatePrediction(const FVector& targetLoc, const FVector& targetVel, float distance, float projSpeed, float gravity = 980.0f) {
+        PredictionContext ctx;
+        if (projSpeed <= 1.0f) {
+            ctx.PredictedLocation = targetLoc; // Instant hit
+            return ctx;
+        }
+
+        ctx.TimeToHit = distance / projSpeed;
+        
+        // Linear velocity prediction
+        ctx.PredictedLocation = targetLoc + (targetVel * ctx.TimeToHit);
+        
+        // Projectile drop simulation (1/2 * g * t^2)
+        ctx.GravityDrop = 0.5f * gravity * (ctx.TimeToHit * ctx.TimeToHit);
+        ctx.PredictedLocation.Z += ctx.GravityDrop; // Compensate by aiming higher
+        
+        return ctx;
+    }
+
+    // Cubic-Bezier like smooth curve math
+    inline FRotator AdvancedSmooth(const FRotator& current, const FRotator& target, float factor, float dt = 0.016f) {
+        if (factor <= 1.0f) return target;
+        
+        FRotator delta;
+        delta.Pitch = target.Pitch - current.Pitch;
+        delta.Yaw = target.Yaw - current.Yaw;
+        
+        // Normalize
+        while (delta.Yaw > 180.0f) delta.Yaw -= 360.0f;
+        while (delta.Yaw < -180.0f) delta.Yaw += 360.0f;
+        
+        // Dynamic easing based on delta magnitude (humanized response)
+        float magnitude = std::sqrt(delta.Pitch*delta.Pitch + delta.Yaw*delta.Yaw);
+        float dynamicFactor = factor;
+        
+        if (magnitude < 2.0f) {
+            dynamicFactor *= 1.5f; // Slower when closer to target (micro-adjustments)
+        } else if (magnitude > 15.0f) {
+            dynamicFactor *= 0.8f; // Faster flick when far away
+        }
+
+        FRotator finalRot;
+        finalRot.Pitch = current.Pitch + (delta.Pitch / dynamicFactor);
+        finalRot.Yaw = current.Yaw + (delta.Yaw / dynamicFactor);
+        finalRot.Roll = 0.0f;
+        
+        Math::ClampAngle(finalRot);
+        return finalRot;
+    }
+
+    // Visibility and Priority Evaluation
+    struct TargetResult {
+        Entity targetEntity;
+        float priorityScore; // Lower is better
+    };
+
     inline std::optional<Entity> GetBestTarget(const std::vector<Entity>& players, const LocalPlayer& localPlayer, const Camera& camera, int screenWidth, int screenHeight) {
-        std::optional<Entity> bestTarget = std::nullopt;
+        std::vector<TargetResult> validTargets;
         float bestFov = Config::aimbot_fov;
-        
-        FVector cameraLoc(camera.GetViewMatrix().m[3][0], camera.GetViewMatrix().m[3][1], camera.GetViewMatrix().m[3][2]); // Not exactly translation but a close enough approximation from the matrix row 3 or actual camera pos if we read it
-        // A better approach is to read the camera pos explicitly. For now we use world to screen distance to crosshair.
-        
+        FVector cameraLoc = camera.GetLocation();
         ImVec2 center(screenWidth / 2.0f, screenHeight / 2.0f);
         int localTeam = localPlayer.GetTeamId();
 
         for (auto& player : players) {
             if (player.GetAddress() == localPlayer.GetAddress()) continue;
             if (player.GetHealth() <= 0) continue;
-            
-            // Team check (basic)
-            if (player.GetTeamId() == localTeam && localTeam != 255) continue; // Assuming 255 is FFA or no team
+            if (player.GetTeamId() == localTeam && localTeam != 255) continue;
 
-            FVector targetLoc = player.GetLocation();
+            FVector originalLoc = player.GetLocation();
             
+            // Apply primitive velocity if prediction is enabled
+            FVector currentLoc = originalLoc;
             if (Config::aimbot_prediction) {
-                FVector velocity = player.GetVelocity();
-                float distance = targetLoc.Distance(cameraLoc);
-                // Basic time of flight prediction (assuming bullet speed, magic number here for demo)
-                float timeToTarget = distance / 10000.0f; 
-                targetLoc = targetLoc + (velocity * timeToTarget);
+                FVector vel = player.GetVelocity();
+                float dist = originalLoc.Distance(cameraLoc);
+                PredictionContext pred = CalculatePrediction(originalLoc, vel, dist, 50000.0f);
+                currentLoc = pred.PredictedLocation;
             }
 
             FVector screenPos;
-            if (Visuals::WorldToScreen(targetLoc, camera.GetViewMatrix(), screenWidth, screenHeight, screenPos)) {
+            if (Visuals::WorldToScreen(currentLoc, camera, screenWidth, screenHeight, screenPos)) {
                 float distToCrosshair = std::sqrt(std::pow(screenPos.X - center.x, 2) + std::pow(screenPos.Y - center.y, 2));
-                
-                // Convert screen distance to a crude FOV mapping, or just use raw pixels
                 float fovMapping = distToCrosshair / (screenWidth / 90.0f); 
                 
                 if (fovMapping < bestFov) {
-                    bestFov = fovMapping;
-                    bestTarget = player; 
+                    TargetResult res;
+                    res.targetEntity = player;
+                    
+                    // Priority is a mix of distance to crosshair, real 3D distance, and absolute health
+                    float realDist = originalLoc.Distance(cameraLoc) / 100.0f;
+                    float hpWeight = player.GetHealth() / player.GetMaxHealth();
+                    
+                    // Complex priority score algorithm
+                    res.priorityScore = (fovMapping * 0.6f) + (realDist * 0.3f) + (hpWeight * 0.1f);
+                    validTargets.push_back(res);
                 }
             }
         }
         
-        return bestTarget;
+        if (validTargets.empty()) return std::nullopt;
+        
+        // Sort by best score
+        std::sort(validTargets.begin(), validTargets.end(), [](const TargetResult& a, const TargetResult& b) {
+            return a.priorityScore < b.priorityScore;
+        });
+
+        return validTargets.front().targetEntity;
     }
 
     inline void AimAt(const FVector& target, const LocalPlayer& localPlayer, const Camera& camera) {
-        FVector camLoc(camera.GetViewMatrix().m[3][0], camera.GetViewMatrix().m[3][1], camera.GetViewMatrix().m[3][2]); // Assuming row 3 is translation
+        FVector camLoc = camera.GetLocation();
         
         FRotator currentRot = localPlayer.GetControlRotation();
         FRotator targetRot = Math::CalcAngle(camLoc, target);
@@ -60,16 +136,7 @@ namespace Aimbot {
         Math::ClampAngle(targetRot);
         
         if (Config::aimbot_smooth > 1.0f) {
-            FRotator delta;
-            delta.Pitch = targetRot.Pitch - currentRot.Pitch;
-            delta.Yaw = targetRot.Yaw - currentRot.Yaw;
-            
-            Math::ClampAngle(delta);
-            
-            targetRot.Pitch = currentRot.Pitch + (delta.Pitch / Config::aimbot_smooth);
-            targetRot.Yaw = currentRot.Yaw + (delta.Yaw / Config::aimbot_smooth);
-            
-            Math::ClampAngle(targetRot);
+            targetRot = AdvancedSmooth(currentRot, targetRot, Config::aimbot_smooth);
         }
         
         localPlayer.SetControlRotation(targetRot);

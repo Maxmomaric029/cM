@@ -1,5 +1,6 @@
 #pragma once
 #include "Entity.h"
+#include "../memory/Memory.h"
 
 class LocalPlayer : public Entity {
 private:

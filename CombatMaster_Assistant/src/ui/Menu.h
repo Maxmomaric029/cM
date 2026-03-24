@@ -45,6 +45,7 @@ namespace Menu {
                 ImGui::Checkbox("Enable Triggerbot", &Config::triggerbot_enabled);
                 ImGui::Separator();
                 ImGui::SliderInt("Delay (ms)", &Config::triggerbot_delay, 0, 1000);
+                ImGui::Checkbox("Humanize Delay", &Config::triggerbot_randomize);
                 ImGui::EndTabItem();
             }
 

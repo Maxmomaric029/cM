@@ -23,6 +23,7 @@ namespace Config {
 
     inline bool triggerbot_enabled = false;
     inline int triggerbot_delay = 100;
+    inline bool triggerbot_randomize = true;
 
     inline void Load(const std::string& path) {
         std::ifstream file(path);
@@ -66,6 +67,7 @@ namespace Config {
             auto& t = j["triggerbot"];
             if (t.contains("enabled")) triggerbot_enabled = t["enabled"];
             if (t.contains("delay")) triggerbot_delay = t["delay"];
+            if (t.contains("randomize")) triggerbot_randomize = t["randomize"];
         }
     }
 
@@ -88,6 +90,7 @@ namespace Config {
 
         j["triggerbot"]["enabled"] = triggerbot_enabled;
         j["triggerbot"]["delay"] = triggerbot_delay;
+        j["triggerbot"]["randomize"] = triggerbot_randomize;
 
         std::ofstream file(path);
         if (file.is_open()) {

@@ -20,6 +20,7 @@ struct FVector {
     float Size2D() const { return std::sqrt(X * X + Y * Y); }
     
     float Distance(const FVector& v) const { return (*this - v).Size(); }
+    float DotProduct(const FVector& v) const { return X * v.X + Y * v.Y + Z * v.Z; }
     
     void Normalize() {
         float size = Size();
@@ -47,6 +48,27 @@ struct FTransform {
 };
 
 namespace Math {
+    inline void GetAxes(const FRotator& rot, FVector& x, FVector& y, FVector& z) {
+        float cp = std::cos(rot.Pitch * (M_PI / 180.0f));
+        float sp = std::sin(rot.Pitch * (M_PI / 180.0f));
+        float cy = std::cos(rot.Yaw * (M_PI / 180.0f));
+        float sy = std::sin(rot.Yaw * (M_PI / 180.0f));
+        float cr = std::cos(rot.Roll * (M_PI / 180.0f));
+        float sr = std::sin(rot.Roll * (M_PI / 180.0f));
+
+        x.X = cp * cy;
+        x.Y = cp * sy;
+        x.Z = sp;
+
+        y.X = sr * sp * cy - cr * sy;
+        y.Y = sr * sp * sy + cr * cy;
+        y.Z = -sr * cp;
+
+        z.X = -(cr * sp * cy + sr * sy);
+        z.Y = cy * sr - cr * sp * sy;
+        z.Z = cr * cp;
+    }
+
     inline FRotator CalcAngle(const FVector& from, const FVector& to) {
         FVector delta = to - from;
         float distance = delta.Size();

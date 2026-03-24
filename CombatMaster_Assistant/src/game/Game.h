@@ -3,6 +3,7 @@
 #include "Camera.h"
 #include "../utils/Logger.h"
 #include <vector>
+#include <chrono>
 
 class Game {
 private:
@@ -11,7 +12,13 @@ private:
     uintptr_t localPlayerPtr = 0;
     uintptr_t playerController = 0;
 
+    // Entity cache to prevent massive FPS drops
+    std::vector<Entity> cachedPlayers;
+    std::chrono::steady_clock::time_point lastCacheTime;
+
 public:
+    Game() : lastCacheTime(std::chrono::steady_clock::now()) {}
+
     bool Update() {
         auto& mem = Memory::Get();
         uWorld = mem.Read<uintptr_t>(mem.GetBaseAddress() + Offsets::GWORLD_OFFSET);
@@ -61,16 +68,22 @@ public:
         return Camera(cameraManager);
     }
 
-    std::vector<Entity> GetPlayers() const {
+    std::vector<Entity> GetPlayers() {
+        auto now = std::chrono::steady_clock::now();
+        // Cache players every 500ms to save CPU cycles from reading ULevel array every frame
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastCacheTime).count() < 200 && !cachedPlayers.empty()) {
+            return cachedPlayers;
+        }
+
         std::vector<Entity> players;
         auto& mem = Memory::Get();
         
-        if (!uWorld) return players;
+        if (!uWorld) return cachedPlayers;
         
         uintptr_t persistentLevel = mem.Read<uintptr_t>(uWorld + Offsets::UWORLD_PERSISTENTLEVEL);
         if (!persistentLevel) {
             static bool loggedPL = false; if (!loggedPL) { Logger::Error("[Game::GetPlayers] Failed to read PersistentLevel"); loggedPL = true; }
-            return players;
+            return cachedPlayers;
         }
         
         uintptr_t actorsArray = mem.Read<uintptr_t>(persistentLevel + Offsets::ULEVEL_ACTORS);
@@ -84,24 +97,29 @@ public:
 
         if (!actorsArray) {
             static bool loggedA = false; if (!loggedA) { Logger::Error("[Game::GetPlayers] Failed to read ActorsArray"); loggedA = true; }
-            return players;
+            return cachedPlayers;
         }
 
         if (actorCount <= 0 || actorCount > 10000) {
             static bool loggedC = false; if (!loggedC) { Logger::Error("[Game::GetPlayers] Invalid ActorCount: " + std::to_string(actorCount) + " (Max: 10000). Check ULEVEL_ACTORCOUNT offset."); loggedC = true; }
-            return players;
+            return cachedPlayers;
         }
         
-        for (int i = 0; i < actorCount; i++) {
-            uintptr_t actor = mem.Read<uintptr_t>(actorsArray + (i * 8));
+        // Massive performance improvement: Read entire pointer array at once instead of individual RPMs
+        std::vector<uintptr_t> actorPointers = mem.ReadArray<uintptr_t>(actorsArray, actorCount);
+        
+        for (uintptr_t actor : actorPointers) {
             if (!actor) continue;
             
-            // Basic sanity check, could check vtable or specific components to ensure it's a character
+            // Basic sanity check to ensure it's a character or has root component
             uintptr_t rootComp = mem.Read<uintptr_t>(actor + Offsets::ACTOR_ROOTCOMPONENT);
             if (rootComp) {
                 players.push_back(Entity(actor));
             }
         }
+        
+        cachedPlayers = players;
+        lastCacheTime = now;
         
         return players;
     }

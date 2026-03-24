@@ -1,22 +1,28 @@
 #pragma once
 #include "../targeting/Math.h"
+#include "../game/Camera.h"
 
 namespace Visuals {
-    inline bool WorldToScreen(const FVector& worldLocation, const FMatrix& viewMatrix, int screenWidth, int screenHeight, FVector& outScreen) {
+    inline bool WorldToScreen(const FVector& worldLocation, const Camera& camera, int screenWidth, int screenHeight, FVector& outScreen) {
+        FVector camLoc = camera.GetLocation();
+        FRotator camRot = camera.GetRotation();
+        float fov = camera.GetFOV();
 
-        float w = worldLocation.X * viewMatrix.m[0][3] + worldLocation.Y * viewMatrix.m[1][3] + worldLocation.Z * viewMatrix.m[2][3] + viewMatrix.m[3][3];
-        
-        if (w < 0.01f) {
+        FVector axisX, axisY, axisZ;
+        Math::GetAxes(camRot, axisX, axisY, axisZ);
+
+        FVector delta = worldLocation - camLoc;
+        FVector transformed(delta.DotProduct(axisY), delta.DotProduct(axisZ), delta.DotProduct(axisX));
+
+        if (transformed.Z < 1.0f) {
             return false;
         }
-        
-        float x = worldLocation.X * viewMatrix.m[0][0] + worldLocation.Y * viewMatrix.m[1][0] + worldLocation.Z * viewMatrix.m[2][0] + viewMatrix.m[3][0];
-        float y = worldLocation.X * viewMatrix.m[0][1] + worldLocation.Y * viewMatrix.m[1][1] + worldLocation.Z * viewMatrix.m[2][1] + viewMatrix.m[3][1];
-        
-        outScreen.X = (screenWidth / 2.0f) + (x / w) * (screenWidth / 2.0f);
-        outScreen.Y = (screenHeight / 2.0f) - (y / w) * (screenHeight / 2.0f);
-        outScreen.Z = w;
-        
+
+        float fovRad = fov * (M_PI / 360.0f);
+        outScreen.X = (screenWidth / 2.0f) + transformed.X * ((screenWidth / 2.0f) / std::tan(fovRad)) / transformed.Z;
+        outScreen.Y = (screenHeight / 2.0f) - transformed.Y * ((screenWidth / 2.0f) / std::tan(fovRad)) / transformed.Z;
+        outScreen.Z = transformed.Z;
+
         return true;
     }
 }

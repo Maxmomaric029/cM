@@ -1,3 +1,5 @@
+#include <windows.h>
+#include <iostream>
 #include "utils/Console.h"
 #include "utils/Logger.h"
 #include "memory/Memory.h"
