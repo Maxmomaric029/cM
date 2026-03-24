@@ -1,10 +1,10 @@
-name: Build C++ Application
+name: Build Internal DLL
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
 
 jobs:
   build:
@@ -24,17 +24,6 @@ jobs:
             echo "workdir=." >> $env:GITHUB_ENV
         }
 
-    - name: Download imgui
-      working-directory: ${{ env.workdir }}
-      run: |
-        git clone -b docking https://github.com/ocornut/imgui.git include/imgui
-      
-    - name: Download nlohmann json
-      working-directory: ${{ env.workdir }}
-      run: |
-        mkdir include\nlohmann
-        curl -L https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp -o include/nlohmann/json.hpp
-        
     - name: Configure CMake
       working-directory: ${{ env.workdir }}
       run: cmake -B build -A x64
@@ -46,7 +35,6 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Nexus_Overlay
+        name: Nexus_Internal_DLL
         path: |
-          ${{ env.workdir }}/build/Release/Nexus_Overlay.exe
-          ${{ env.workdir }}/build/Release/resources/config.json
+          ${{ env.workdir }}/build/Release/Nexus_Internal.dll
