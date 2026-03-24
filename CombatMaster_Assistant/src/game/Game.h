@@ -20,30 +20,10 @@ private:
         auto& mem = Memory::Get();
         uintptr_t base = mem.GetBaseAddress();
         
-        // Try static offset first
+        // Trust static offsets as requested.
+        // No pattern scanning fallback here, because scanning 128MB per frame causes massive lag if UWorld is 0 in the menu.
         uintptr_t staticAddr = base + Offsets::GWORLD_OFFSET;
-        uintptr_t uWorldPtr = mem.Read<uintptr_t>(staticAddr);
-        if (uWorldPtr) return uWorldPtr;
-
-        // Pattern Scan Fallback for UE4.27 GWorld
-        // Pattern: 48 8B 05 ? ? ? ? 48 8B 88 ? ? ? ? 48 85 C9 74 06
-        uintptr_t sig = mem.FindPattern(base, 0x8000000, "\x48\x8B\x05\x00\x00\x00\x00\x48\x8B\x88\x00\x00\x00\x00\x48\x85\xC9\x74\x06", "xxx????xxx????xxxxx");
-        if (sig) {
-            uint32_t offset = mem.Read<uint32_t>(sig + 3);
-            uintptr_t gworld_ptr_addr = sig + offset + 7;
-            return mem.Read<uintptr_t>(gworld_ptr_addr);
-        }
-
-        // Another common UE4 pattern
-        // 48 8B 1D ? ? ? ? 48 85 DB 74 3B 41 B0 01
-        sig = mem.FindPattern(base, 0x8000000, "\x48\x8B\x1D\x00\x00\x00\x00\x48\x85\xDB\x74\x3B\x41\xB0\x01", "xxx????xxxxxxxx");
-        if (sig) {
-            uint32_t offset = mem.Read<uint32_t>(sig + 3);
-            uintptr_t gworld_ptr_addr = sig + offset + 7;
-            return mem.Read<uintptr_t>(gworld_ptr_addr);
-        }
-
-        return 0;
+        return mem.Read<uintptr_t>(staticAddr);
     }
 
 public:
