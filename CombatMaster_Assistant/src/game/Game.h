@@ -14,10 +14,7 @@ private:
 public:
     bool Update() {
         auto& mem = Memory::Get();
-        uintptr_t gWorldPtr = mem.Read<uintptr_t>(mem.GetBaseAddress() + Offsets::GWORLD_OFFSET);
-        if (!gWorldPtr) return false;
-
-        uWorld = mem.Read<uintptr_t>(gWorldPtr);
+        uWorld = mem.Read<uintptr_t>(mem.GetBaseAddress() + Offsets::GWORLD_OFFSET);
         if (!uWorld) return false;
 
         gameInstance = mem.Read<uintptr_t>(uWorld + Offsets::UWORLD_OWNINGGAMEINSTANCE);
@@ -61,6 +58,12 @@ public:
         uintptr_t actorsArray = mem.Read<uintptr_t>(persistentLevel + Offsets::ULEVEL_ACTORS);
         int actorCount = mem.Read<int>(persistentLevel + Offsets::ULEVEL_ACTORCOUNT);
         
+        static bool debugged = false;
+        if (!debugged && actorsArray) {
+            Logger::Log("Successfully dumped UWorld! Actor Count: " + std::to_string(actorCount));
+            debugged = true;
+        }
+
         if (!actorsArray || actorCount <= 0 || actorCount > 10000) return players;
         
         for (int i = 0; i < actorCount; i++) {
