@@ -16,6 +16,7 @@
 #include "../utils/Hotkeys.h"
 #include "../targeting/Aimbot.h"
 #include "../targeting/Triggerbot.h"
+#include "../utils/ImageLoader.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -27,6 +28,7 @@ private:
     D3DPRESENT_PARAMETERS d3dpp = {};
     int screenWidth = 0;
     int screenHeight = 0;
+    IDirect3DTexture9* logoTexture = nullptr;
 
     static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
@@ -36,7 +38,7 @@ private:
         case WM_SIZE:
             return 0;
         case WM_SYSCOMMAND:
-            if ((wParam & 0xfff0) == SC_KEYMENU) return 0; // Disable ALT application menu
+            if ((wParam & 0xfff0) == SC_KEYMENU) return 0; 
             break;
         case WM_DESTROY:
             PostQuitMessage(0);
@@ -64,11 +66,11 @@ private:
     }
 
     void CleanupDeviceD3D() {
+        if (logoTexture) { logoTexture->Release(); logoTexture = nullptr; }
         if (pd3dDevice) { pd3dDevice->Release(); pd3dDevice = nullptr; }
         if (pD3D) { pD3D->Release(); pD3D = nullptr; }
     }
     
-    // Draw an off-screen directional arrow indicating enemy position
     void DrawOffScreenArrow(const FVector& targetLoc, const Camera& camera, ImU32 color) {
         FVector camLoc = camera.GetLocation();
         FRotator camRot = camera.GetRotation();
@@ -83,15 +85,13 @@ private:
         
         float diff = angleToTarget - camYawRad;
         
-        // Normalize diff
         while (diff > M_PI) diff -= 2 * M_PI;
         while (diff < -M_PI) diff += 2 * M_PI;
         
-        float radius = screenHeight / 3.0f; // Radius of the off-screen ring
+        float radius = screenHeight / 3.0f; 
         float drawX = (screenWidth / 2.0f) + radius * std::sin(diff);
         float drawY = (screenHeight / 2.0f) - radius * std::cos(diff);
         
-        // Draw triangle indicator
         ImVec2 p1(drawX + 15 * std::sin(diff), drawY - 15 * std::cos(diff));
         ImVec2 p2(drawX + 10 * std::sin(diff + 2.3f), drawY - 10 * std::cos(diff + 2.3f));
         ImVec2 p3(drawX + 10 * std::sin(diff - 2.3f), drawY - 10 * std::cos(diff - 2.3f));
@@ -141,15 +141,13 @@ private:
             FVector location = player.GetLocation();
             FVector screenPos;
             
-            float dist = location.Distance(localPlayer.GetLocation()) / 100.0f; // Scale distance
+            float dist = location.Distance(localPlayer.GetLocation()) / 100.0f;
             if (dist > Config::esp_max_distance) continue;
             
-            // WorldToScreen projection
             if (Visuals::WorldToScreen(location, camera, screenWidth, screenHeight, screenPos)) {
                 
-                // Advanced Screen Bounds Filtering
                 if (screenPos.X < -500 || screenPos.X > screenWidth + 500 || screenPos.Y < -500 || screenPos.Y > screenHeight + 500) {
-                    continue; // Cull invisible boxes entirely to save draw calls
+                    continue; 
                 }
 
                 float h = 10000.0f / screenPos.Z; 
@@ -185,14 +183,12 @@ private:
                     ESP::DrawLine(screenWidth / 2, screenHeight, screenPos.X, screenPos.Y + h, color, 1.5f);
                 }
             } else {
-                // Feature: Draw arrow offscreen for out of frustum enemies
-                if (!isTeam) { // Only draw enemy arrows
+                if (!isTeam) { 
                      DrawOffScreenArrow(location, camera, color);
                 }
             }
         }
         
-        // Draw Custom Precision FOV Circle
         if (Config::aimbot_enabled && Menu::bShowMenu) {
              ImGui::GetBackgroundDrawList()->AddCircle(ImVec2(screenWidth / 2.0f, screenHeight / 2.0f), Config::aimbot_fov * 5.0f, ImGui::GetColorU32(ImVec4(0, 1, 1, 0.4f)), 64, 1.0f);
         }
@@ -229,6 +225,21 @@ public:
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO(); (void)io;
         
+        // Advanced Custom Font Loading Strategy
+        ImFontConfig font_cfg;
+        font_cfg.OversampleH = 2;
+        font_cfg.OversampleV = 2;
+
+        if (GetFileAttributesA("fonts/Roboto-Medium.ttf") != INVALID_FILE_ATTRIBUTES) {
+            io.Fonts->AddFontFromFileTTF("fonts/Roboto-Medium.ttf", 16.0f, &font_cfg); // Base Text Font
+        } else {
+            // Fallback if missing
+            io.Fonts->AddFontDefault();
+        }
+
+        // Texture Loading for Menu Logo
+        ImageLoader::LoadTextureFromFile("images/logo.png", pd3dDevice, &logoTexture, nullptr, nullptr);
+
         Theme::Apply();
 
         ImGui_ImplWin32_Init(hwnd);
@@ -272,9 +283,8 @@ public:
                 DrawESP();
             }
 
-            if (Menu::bShowMenu) {
-                Menu::Draw();
-            }
+            // Draw Menu, passing the logo texture id (could be null, handled inside Menu::Draw)
+            Menu::Draw((ImTextureID)logoTexture);
 
             ImGui::EndFrame();
 
