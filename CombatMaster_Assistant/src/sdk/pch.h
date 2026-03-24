@@ -29,6 +29,13 @@ struct Vector3 {
 
 struct Vector2 { 
     float x, y; 
+    
+    Vector2() : x(0), y(0) {}
+    Vector2(float _x, float _y) : x(_x), y(_y) {}
+
+    float Distance(const Vector2& v) const {
+        return std::sqrt(std::pow(v.x - x, 2) + std::pow(v.y - y, 2));
+    }
 };
 
 struct Matrix4x4 { 

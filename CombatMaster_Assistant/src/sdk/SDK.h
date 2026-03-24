@@ -15,6 +15,22 @@ public:
     }
 };
 
+class Camera {
+public:
+    Matrix4x4 GetViewMatrix() {
+        uintptr_t cachedPtr = *(uintptr_t*)((uintptr_t)this + Offsets::Object::cachedPtr);
+        if (!cachedPtr) return {};
+        return *(Matrix4x4*)(cachedPtr + Offsets::viewMatrix);
+    }
+};
+
+class CameraController {
+public:
+    Camera* GetCamera() {
+        return *(Camera**)((uintptr_t)this + 0x98); // CM Base Internal Offset
+    }
+};
+
 class CPlayer {
 public:
     bool isRealPlayer() { return *(bool*)((uintptr_t)this + Offsets::PlayerRoot::isRealPlayer); }
@@ -31,6 +47,16 @@ public:
         uintptr_t transformStruct = *(uintptr_t*)((uintptr_t)this + Offsets::Transform::transformData);
         if (!transformStruct) return {};
         return *(Vector3*)(transformStruct + Offsets::TransformData::rootPosition);
+    }
+
+    CameraController* GetCameraController() {
+        return *(CameraController**)((uintptr_t)this + 0x48); // CM Base Internal Offset
+    }
+    
+    Camera* GetCamera() {
+        CameraController* controller = GetCameraController();
+        if (!controller) return nullptr;
+        return controller->GetCamera();
     }
 };
 

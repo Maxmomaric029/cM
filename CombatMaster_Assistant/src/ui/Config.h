@@ -10,6 +10,10 @@ namespace Config {
     inline float aimbot_fov = 15.0f;
     inline float aimbot_smooth = 5.0f;
     inline bool aimbot_prediction = false;
+    inline int aimbot_targeting = 0; // 0 = Crosshair, 1 = Distance, 2 = Hybrid
+    inline int aimbot_bone = 0; // 0 = Head, 1 = Neck, 2 = Chest, 3 = Pelvis
+    inline bool aimbot_vis_check = false;
+    inline bool aimbot_follow_crouched = true;
 
     inline bool esp_enabled = true;
     inline bool esp_boxes = true;
