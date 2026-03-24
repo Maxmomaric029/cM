@@ -24,6 +24,12 @@ jobs:
             echo "workdir=." >> $env:GITHUB_ENV
         }
 
+    - name: Download imgui
+      working-directory: ${{ env.workdir }}
+      run: |
+        Remove-Item -Recurse -Force include/imgui -ErrorAction Ignore
+        git clone -b docking https://github.com/ocornut/imgui.git include/imgui
+
     - name: Configure CMake
       working-directory: ${{ env.workdir }}
       run: cmake -B build -A x64
