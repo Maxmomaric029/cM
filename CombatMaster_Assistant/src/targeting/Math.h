@@ -50,6 +50,7 @@ namespace Math {
     inline FRotator CalcAngle(const FVector& from, const FVector& to) {
         FVector delta = to - from;
         float distance = delta.Size();
+        if (distance < 1.0f) return FRotator();
         
         FRotator rot;
         rot.Pitch = -std::asin(delta.Z / distance) * (180.0f / M_PI);

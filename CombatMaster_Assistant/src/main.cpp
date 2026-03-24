@@ -7,12 +7,12 @@
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
 #ifdef _DEBUG
     Console::Alloc();
-    Logger::Log("Combat Master Assistant - Debug Mode");
+    Logger::Log("Nexus Overlay - Debug Mode");
 #endif
 
     Config::Load("config.json");
 
-    Logger::Log("Starting Overlay. Will auto-attach to Combat Master when opening.");
+    Logger::Log("Nexus Overlay starting. Auto-attaching to Combat Master.");
 
     Renderer renderer;
     renderer.Run();

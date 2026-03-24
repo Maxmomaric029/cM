@@ -8,7 +8,39 @@ namespace ESP {
         // Validation for reasonable coordinates to prevent ImGui assertion failures
         if (x < -10000 || y < -10000 || x > 20000 || y > 20000 || w <= 0 || h <= 0) return;
         
+        // Black outline shadow
+        ImGui::GetBackgroundDrawList()->AddRect(ImVec2(x - 1, y - 1), ImVec2(x + w + 1, y + h + 1), ImGui::GetColorU32(ImVec4(0,0,0,1)), 0.0f, 0, thickness + 1.0f);
         ImGui::GetBackgroundDrawList()->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), color, 0.0f, 0, thickness);
+    }
+    
+    void DrawCornerBox(float x, float y, float w, float h, ImU32 color, float thickness) {
+        if (!ImGui::GetCurrentContext() || x < -10000 || y < -10000 || x > 20000 || y > 20000 || w <= 0 || h <= 0) return;
+        
+        float line_w = w / 4.0f;
+        float line_h = h / 4.0f;
+        
+        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+        ImU32 shadow = ImGui::GetColorU32(ImVec4(0,0,0,1));
+        
+        // Draw Outlines
+        drawList->AddLine(ImVec2(x, y), ImVec2(x, y + line_h), shadow, thickness + 2.0f);
+        drawList->AddLine(ImVec2(x, y), ImVec2(x + line_w, y), shadow, thickness + 2.0f);
+        drawList->AddLine(ImVec2(x + w - line_w, y), ImVec2(x + w, y), shadow, thickness + 2.0f);
+        drawList->AddLine(ImVec2(x + w, y), ImVec2(x + w, y + line_h), shadow, thickness + 2.0f);
+        drawList->AddLine(ImVec2(x, y + h - line_h), ImVec2(x, y + h), shadow, thickness + 2.0f);
+        drawList->AddLine(ImVec2(x, y + h), ImVec2(x + line_w, y + h), shadow, thickness + 2.0f);
+        drawList->AddLine(ImVec2(x + w - line_w, y + h), ImVec2(x + w, y + h), shadow, thickness + 2.0f);
+        drawList->AddLine(ImVec2(x + w, y + h - line_h), ImVec2(x + w, y + h), shadow, thickness + 2.0f);
+
+        // Draw Inlines
+        drawList->AddLine(ImVec2(x, y), ImVec2(x, y + line_h), color, thickness);
+        drawList->AddLine(ImVec2(x, y), ImVec2(x + line_w, y), color, thickness);
+        drawList->AddLine(ImVec2(x + w - line_w, y), ImVec2(x + w, y), color, thickness);
+        drawList->AddLine(ImVec2(x + w, y), ImVec2(x + w, y + line_h), color, thickness);
+        drawList->AddLine(ImVec2(x, y + h - line_h), ImVec2(x, y + h), color, thickness);
+        drawList->AddLine(ImVec2(x, y + h), ImVec2(x + line_w, y + h), color, thickness);
+        drawList->AddLine(ImVec2(x + w - line_w, y + h), ImVec2(x + w, y + h), color, thickness);
+        drawList->AddLine(ImVec2(x + w, y + h - line_h), ImVec2(x + w, y + h), color, thickness);
     }
     
     void DrawLine(float x1, float y1, float x2, float y2, ImU32 color, float thickness) {

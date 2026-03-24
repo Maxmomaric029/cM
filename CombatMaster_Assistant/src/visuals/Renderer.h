@@ -130,7 +130,7 @@ private:
                 float y = screenPos.Y - h;
 
                 if (Config::esp_boxes) {
-                    ESP::DrawBox(x, y, w, h, color, 1.5f);
+                    ESP::DrawCornerBox(x, y, w, h, color, 1.5f);
                 }
 
                 if (Config::esp_health) {
@@ -174,7 +174,7 @@ public:
         ::RegisterClassExW(&wc);
         hwnd = ::CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW,
-            wc.lpszClassName, L"CombatMaster Assistant Overlay", WS_POPUP, 
+            wc.lpszClassName, L"Nexus Overlay", WS_POPUP, 
             0, 0, screenWidth, screenHeight, nullptr, nullptr, wc.hInstance, nullptr);
 
         SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);

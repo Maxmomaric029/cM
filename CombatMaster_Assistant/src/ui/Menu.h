@@ -9,7 +9,7 @@ namespace Menu {
         if (!bShowMenu) return;
 
         ImGui::SetNextWindowSize(ImVec2(600, 450), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Combat Master Assistant", &bShowMenu, ImGuiWindowFlags_NoCollapse);
+        ImGui::Begin("Nexus Overlay", &bShowMenu, ImGuiWindowFlags_NoCollapse);
 
         if (ImGui::BeginTabBar("Features")) {
             if (ImGui::BeginTabItem("Aimbot")) {
