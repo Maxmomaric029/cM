@@ -13,7 +13,7 @@ namespace Triggerbot {
         if (!randomize) return baseDelay;
         
         static std::random_device rd;
-        static std::mt19rng2 gen(rd());
+        static std::mt19937 gen(rd());
         // Apply a +/- 30% variance to the base delay
         int variance = static_cast<int>(baseDelay * 0.30f);
         if (variance == 0) variance = 10;

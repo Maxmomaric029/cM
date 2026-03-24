@@ -103,16 +103,13 @@ namespace Aimbot {
                 float fovMapping = distToCrosshair / (screenWidth / 90.0f); 
                 
                 if (fovMapping < bestFov) {
-                    TargetResult res;
-                    res.targetEntity = player;
-                    
                     // Priority is a mix of distance to crosshair, real 3D distance, and absolute health
                     float realDist = originalLoc.Distance(cameraLoc) / 100.0f;
                     float hpWeight = player.GetHealth() / player.GetMaxHealth();
                     
                     // Complex priority score algorithm
-                    res.priorityScore = (fovMapping * 0.6f) + (realDist * 0.3f) + (hpWeight * 0.1f);
-                    validTargets.push_back(res);
+                    float currentPriority = (fovMapping * 0.6f) + (realDist * 0.3f) + (hpWeight * 0.1f);
+                    validTargets.push_back({player, currentPriority});
                 }
             }
         }
