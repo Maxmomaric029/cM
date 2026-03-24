@@ -42,7 +42,7 @@ private:
         if (Menu::bShowMenu) {
             ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
             // Block game input when menu is open
-            if (uMsg == WM_MOUSEMOVE || uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONUP || uMsg == WM_RBUTTONDOWN || uMsg == WM_RBUTTONUP || uMsg == WM_mousewheel)
+            if (uMsg == WM_MOUSEMOVE || uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONUP || uMsg == WM_RBUTTONDOWN || uMsg == WM_RBUTTONUP || uMsg == WM_MOUSEWHEEL)
                 return true;
         }
         
@@ -92,7 +92,7 @@ private:
         ImGui::NewFrame();
 
         renderer.DrawCheat();
-        Menu::Draw(nullptr);
+        Menu::Draw((ImTextureID)nullptr);
 
         ImGui::Render();
         renderer.pContext->OMSetRenderTargets(1, &renderer.mainRenderTargetView, NULL);
