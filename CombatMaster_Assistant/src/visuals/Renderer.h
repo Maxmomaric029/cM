@@ -176,11 +176,9 @@ private:
 
                 if (Config::esp_names) {
                     if (player->GetConnectData()) {
-                        UnityString* uname = player->GetConnectData()->GetNickName();
-                        if (uname) {
-                            std::string narrowName = uname->ToString();
-                            ESP::DrawTextCentered(narrowName, headScreenPos.x, y - 16, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
-                        }
+                        std::wstring wname = player->GetConnectData()->NickName();
+                        std::string narrowName(wname.begin(), wname.end());
+                        ESP::DrawTextCentered(narrowName, headScreenPos.x, y - 16, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
                     }
                 }
 

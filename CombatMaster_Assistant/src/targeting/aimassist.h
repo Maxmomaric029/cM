@@ -11,10 +11,6 @@ inline Vector2 ScreenCenter;
 
 namespace Aimbot {
 
-    // Converts Unity Vector3 to internal FVector to remain compatible with older struct passes if needed
-    inline FVector ToFVector(const Vector3& v) {
-        return FVector(v.x, v.y, v.z);
-    }
 
     inline CPlayer* GetBestTarget(Matrix4x4 viewMatrix, int screenWidth, int screenHeight) {
         float bestScore = 999999.0f;
