@@ -66,6 +66,9 @@ private:
                 
                 renderer.screenWidth = GetSystemMetrics(SM_CXSCREEN);
                 renderer.screenHeight = GetSystemMetrics(SM_CYSCREEN);
+                
+                ScreenCenter.x = renderer.screenWidth / 2.0f;
+                ScreenCenter.y = renderer.screenHeight / 2.0f;
 
                 ID3D11Texture2D* pBackBuffer;
                 pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer);
@@ -101,115 +104,98 @@ private:
         return renderer.oPresent(pSwapChain, SyncInterval, Flags);
     }
 
-    void DrawOffScreenArrow(const FVector& targetLoc, const Camera& camera, ImU32 color) {
-        FVector camLoc = camera.GetLocation();
-        FRotator camRot = camera.GetRotation();
-        
-        float deltaX = targetLoc.X - camLoc.X;
-        float deltaY = targetLoc.Y - camLoc.Y;
-        float dist = std::sqrt(deltaX*deltaX + deltaY*deltaY);
-        if (dist < 100.0f) return;
-        
-        float angleToTarget = std::atan2(deltaY, deltaX);
-        float camYawRad = camRot.Yaw * (M_PI / 180.0f);
-        
-        float diff = angleToTarget - camYawRad;
-        
-        while (diff > M_PI) diff -= 2 * M_PI;
-        while (diff < -M_PI) diff += 2 * M_PI;
-        
-        float radius = screenHeight / 3.0f; 
-        float drawX = (screenWidth / 2.0f) + radius * std::sin(diff);
-        float drawY = (screenHeight / 2.0f) - radius * std::cos(diff);
-        
-        ImVec2 p1(drawX + 15 * std::sin(diff), drawY - 15 * std::cos(diff));
-        ImVec2 p2(drawX + 10 * std::sin(diff + 2.3f), drawY - 10 * std::cos(diff + 2.3f));
-        ImVec2 p3(drawX + 10 * std::sin(diff - 2.3f), drawY - 10 * std::cos(diff - 2.3f));
-        
-        ImGui::GetBackgroundDrawList()->AddTriangleFilled(p1, p2, p3, color);
-    }
-
     void DrawCheat() {
-        if (!Config::esp_enabled) return;
+        if (!Config::esp_enabled && !Config::aimbot_enabled && !Config::triggerbot_enabled) return;
         
-        Game game;
-        if (!game.Update()) return;
+        CPlayer* localPlayer = CPlayerRoot::GetLocalPlayer();
+        if (!localPlayer) return;
+
+        Camera* camera = localPlayer->GetCamera();
+        if (!camera) return;
+
+        Matrix4x4 viewMatrix = camera->GetViewMatrix();
+
+        IL2CPP::Array<CPlayer*>* playersArray = CPlayerRoot::GetAllPlayersArray();
+        int maxPlayers = CPlayerRoot::GetAllPlayersCount();
+        if (!playersArray || maxPlayers <= 0) return;
         
-        LocalPlayer localPlayer = game.GetLocalPlayer();
-        Camera camera = game.GetCamera();
+        int localTeam = localPlayer->GetConnectData() ? localPlayer->GetConnectData()->GetTeamId() : 255;
+        Vector3 localPos = localPlayer->GetRootPosition();
         
-        if (!localPlayer.IsValid() || !camera.IsValid()) return;
-        
-        auto players = game.GetPlayers();
-        int localTeam = localPlayer.GetTeamId();
-        
-        std::optional<Entity> aimTarget = std::nullopt;
-        
+        // --- Aimbot / Triggerbot Engine ---
         if (Config::aimbot_enabled || Config::triggerbot_enabled) {
-            aimTarget = Aimbot::GetBestTarget(players, localPlayer, camera, screenWidth, screenHeight);
+            CPlayer* aimTarget = Aimbot::GetBestTarget(viewMatrix, screenWidth, screenHeight);
             
-            if (aimTarget.has_value() && Config::aimbot_enabled && Hotkeys::IsPressed(VK_RBUTTON)) { 
-                Aimbot::AimAt(aimTarget->GetLocation(), localPlayer, camera);
+            if (aimTarget && Config::aimbot_enabled && Hotkeys::IsPressed(VK_RBUTTON)) { 
+                Aimbot::RunAimbot(aimTarget, viewMatrix, ImGui::GetIO().DeltaTime);
             }
             
             if (Config::triggerbot_enabled) {
-                // Modified triggerbot to pass crosshair and menu info
-                Triggerbot::Run(aimTarget.has_value() && Hotkeys::IsPressed(VK_RBUTTON), Menu::bShowMenu);
+                Triggerbot::Run(aimTarget != nullptr && Hotkeys::IsPressed(VK_RBUTTON), Menu::bShowMenu);
             }
         }
         
-        for (auto& player : players) {
-            if (player.GetAddress() == localPlayer.GetAddress()) continue;
+        if (!Config::esp_enabled) return;
+
+        // --- ESP Engine ---
+        for (int i = 0; i < maxPlayers; i++) {
+            CPlayer* player = playersArray->vector[i];
             
-            float health = player.GetHealth();
+            if (!player || player == localPlayer) continue;
+            
+            float health = player->GetHealth();
             if (health <= 0) continue;
             
-            bool isTeam = (player.GetTeamId() == localTeam && localTeam != 255);
+            int team = player->GetConnectData() ? player->GetConnectData()->GetTeamId() : 255;
+            bool isTeam = (team == localTeam && localTeam != 0); // 0 Usually means FFA 
+
             ImU32 color = isTeam ? 
                 ImGui::ColorConvertFloat4ToU32(ImVec4(Config::esp_color_team[0], Config::esp_color_team[1], Config::esp_color_team[2], Config::esp_color_team[3])) : 
                 ImGui::ColorConvertFloat4ToU32(ImVec4(Config::esp_color_enemy[0], Config::esp_color_enemy[1], Config::esp_color_enemy[2], Config::esp_color_enemy[3]));
             
-            FVector location = player.GetLocation();
-            FVector screenPos;
+            Vector3 location = player->GetRootPosition();
+            Vector3 headLocation = location;
+            headLocation.y += 1.8f; // Head Offset
             
-            float dist = location.Distance(localPlayer.GetLocation()) / 100.0f;
+            float dist = Vector3(localPos.x, localPos.y, localPos.z).Distance(location) / 100.0f;
             if (dist > Config::esp_max_distance) continue;
             
-            if (Visuals::WorldToScreen(location, camera, screenWidth, screenHeight, screenPos)) {
-                if (screenPos.X < -500 || screenPos.X > screenWidth + 500 || screenPos.Y < -500 || screenPos.Y > screenHeight + 500) continue; 
-
-                float h = 10000.0f / screenPos.Z; 
+            Vector2 screenPos, headScreenPos;
+            
+            if (Visuals::WorldToScreen(location, &screenPos, viewMatrix) && Visuals::WorldToScreen(headLocation, &headScreenPos, viewMatrix)) {
+                
+                // Calculate dynamic box dimensions
+                float h = screenPos.y - headScreenPos.y; 
+                if (h < 0) h = -h;
                 float w = h / 2.0f;
-                float x = screenPos.X - (w / 2.0f);
-                float y = screenPos.Y - h;
+                float x = headScreenPos.x - (w / 2.0f);
+                float y = headScreenPos.y;
 
                 if (Config::esp_boxes) ESP::DrawCornerBox(x, y, w, h, color, 1.5f);
-                if (Config::esp_health) ESP::DrawHealthBar(x - 6, y, 3, h, health, player.GetMaxHealth());
+                if (Config::esp_health) ESP::DrawHealthBar(x - 6, y, 3, h, health, 100.0f);
 
                 if (Config::esp_names) {
-                    std::wstring wname = player.GetPlayerName();
-                    if (!wname.empty()) {
-                        int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wname[0], (int)wname.size(), NULL, 0, NULL, NULL);
-                        std::string narrowName(size_needed, 0);
-                        WideCharToMultiByte(CP_UTF8, 0, &wname[0], (int)wname.size(), &narrowName[0], size_needed, NULL, NULL);
-                        ESP::DrawTextCentered(narrowName, screenPos.X, y - 16, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
+                    if (player->GetConnectData()) {
+                        UnityString* uname = player->GetConnectData()->GetNickName();
+                        if (uname) {
+                            std::string narrowName = uname->ToString();
+                            ESP::DrawTextCentered(narrowName, headScreenPos.x, y - 16, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
+                        }
                     }
                 }
 
                 if (Config::esp_distance) {
                     char distStr[32];
                     sprintf_s(distStr, "%.1fm", dist);
-                    ESP::DrawTextCentered(distStr, screenPos.X, y + h + 4, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
+                    ESP::DrawTextCentered(distStr, headScreenPos.x, y + h + 4, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
                 }
 
-                if (Config::esp_lines) ESP::DrawLine(screenWidth / 2, screenHeight, screenPos.X, screenPos.Y + h, color, 1.5f);
-            } else {
-                if (!isTeam) DrawOffScreenArrow(location, camera, color);
-            }
+                if (Config::esp_lines) ESP::DrawLine(screenWidth / 2, screenHeight, headScreenPos.x, screenPos.y, color, 1.5f);
+            } 
         }
         
         if (Config::aimbot_enabled && Menu::bShowMenu) {
-             ImGui::GetBackgroundDrawList()->AddCircle(ImVec2(screenWidth / 2.0f, screenHeight / 2.0f), Config::aimbot_fov * 5.0f, ImGui::GetColorU32(ImVec4(0, 1, 1, 0.4f)), 64, 1.0f);
+             ImGui::GetBackgroundDrawList()->AddCircle(ImVec2(screenWidth / 2.0f, screenHeight / 2.0f), Config::aimbot_fov, ImGui::GetColorU32(ImVec4(0, 1, 1, 0.4f)), 64, 1.0f);
         }
     }
 

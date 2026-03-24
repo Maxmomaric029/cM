@@ -1,141 +1,134 @@
 #pragma once
-#include "../game/Game.h"
-#include "../ui/Config.h"
 #include <windows.h>
 #include <vector>
-#include <optional>
+#include <cmath>
+#include "../sdk/SDK.h"
+#include "../ui/Config.h"
 #include "../visuals/WorldToScreen.h"
-#include <algorithm>
+
+// Expose ScreenCenter globally for WorldToScreen math
+inline Vector2 ScreenCenter;
 
 namespace Aimbot {
 
-    // Advanced Prediction & Physics Engine
-    struct PredictionContext {
-        float TimeToHit;
-        FVector PredictedLocation;
-        float GravityDrop;
-        
-        PredictionContext() : TimeToHit(0.0f), PredictedLocation(), GravityDrop(0.0f) {}
-    };
-
-    inline PredictionContext CalculatePrediction(const FVector& targetLoc, const FVector& targetVel, float distance, float projSpeed, float gravity = 980.0f) {
-        PredictionContext ctx;
-        if (projSpeed <= 1.0f) {
-            ctx.PredictedLocation = targetLoc; // Instant hit
-            return ctx;
-        }
-
-        ctx.TimeToHit = distance / projSpeed;
-        
-        // Linear velocity prediction
-        ctx.PredictedLocation = targetLoc + (targetVel * ctx.TimeToHit);
-        
-        // Projectile drop simulation (1/2 * g * t^2)
-        ctx.GravityDrop = 0.5f * gravity * (ctx.TimeToHit * ctx.TimeToHit);
-        ctx.PredictedLocation.Z += ctx.GravityDrop; // Compensate by aiming higher
-        
-        return ctx;
+    // Converts Unity Vector3 to internal FVector to remain compatible with older struct passes if needed
+    inline FVector ToFVector(const Vector3& v) {
+        return FVector(v.x, v.y, v.z);
     }
 
-    // Cubic-Bezier like smooth curve math
-    inline FRotator AdvancedSmooth(const FRotator& current, const FRotator& target, float factor, float dt = 0.016f) {
-        if (factor <= 1.0f) return target;
-        
-        FRotator delta;
-        delta.Pitch = target.Pitch - current.Pitch;
-        delta.Yaw = target.Yaw - current.Yaw;
-        
-        // Normalize
-        while (delta.Yaw > 180.0f) delta.Yaw -= 360.0f;
-        while (delta.Yaw < -180.0f) delta.Yaw += 360.0f;
-        
-        // Dynamic easing based on delta magnitude (humanized response)
-        float magnitude = std::sqrt(delta.Pitch*delta.Pitch + delta.Yaw*delta.Yaw);
-        float dynamicFactor = factor;
-        
-        if (magnitude < 2.0f) {
-            dynamicFactor *= 1.5f; // Slower when closer to target (micro-adjustments)
-        } else if (magnitude > 15.0f) {
-            dynamicFactor *= 0.8f; // Faster flick when far away
-        }
+    inline CPlayer* GetBestTarget(Matrix4x4 viewMatrix, int screenWidth, int screenHeight) {
+        float bestScore = 999999.0f;
+        CPlayer* bestPlayer = nullptr;
 
-        FRotator finalRot;
-        finalRot.Pitch = current.Pitch + (delta.Pitch / dynamicFactor);
-        finalRot.Yaw = current.Yaw + (delta.Yaw / dynamicFactor);
-        finalRot.Roll = 0.0f;
-        
-        Math::ClampAngle(finalRot);
-        return finalRot;
-    }
+        CPlayer* localPlayer = CPlayerRoot::GetLocalPlayer();
+        if (!localPlayer) return nullptr;
 
-    // Visibility and Priority Evaluation
-    struct TargetResult {
-        Entity targetEntity;
-        float priorityScore; // Lower is better
-    };
+        Vector3 localPos = localPlayer->GetRootPosition();
+        int localTeam = localPlayer->GetConnectData() ? localPlayer->GetConnectData()->GetTeamId() : 255;
 
-    inline std::optional<Entity> GetBestTarget(const std::vector<Entity>& players, const LocalPlayer& localPlayer, const Camera& camera, int screenWidth, int screenHeight) {
-        std::vector<TargetResult> validTargets;
-        float bestFov = Config::aimbot_fov;
-        FVector cameraLoc = camera.GetLocation();
-        ImVec2 center(screenWidth / 2.0f, screenHeight / 2.0f);
-        int localTeam = localPlayer.GetTeamId();
+        IL2CPP::Array<CPlayer*>* playersArray = CPlayerRoot::GetAllPlayersArray();
+        int maxPlayers = CPlayerRoot::GetAllPlayersCount();
+        if (!playersArray || maxPlayers == 0) return nullptr;
 
-        for (auto& player : players) {
-            if (player.GetAddress() == localPlayer.GetAddress()) continue;
-            if (player.GetHealth() <= 0) continue;
-            if (player.GetTeamId() == localTeam && localTeam != 255) continue;
-
-            FVector originalLoc = player.GetLocation();
+        for (int i = 0; i < maxPlayers; i++) {
+            CPlayer* player = playersArray->vector[i];
             
-            // Apply primitive velocity if prediction is enabled
-            FVector currentLoc = originalLoc;
-            if (Config::aimbot_prediction) {
-                FVector vel = player.GetVelocity();
-                float dist = originalLoc.Distance(cameraLoc);
-                PredictionContext pred = CalculatePrediction(originalLoc, vel, dist, 50000.0f);
-                currentLoc = pred.PredictedLocation;
+            // Skip invalid or local player
+            if (!player || player == localPlayer) continue;
+
+            // Health and Team checks
+            if (player->GetHealth() <= 0.0f) continue;
+            
+            int team = player->GetConnectData() ? player->GetConnectData()->GetTeamId() : 255;
+            if (team == localTeam && localTeam != 0) continue; // 0 Usually means FFA or unassigned team
+
+            // Visibility Check
+            if (Config::aimbot_vis_check && !player->isVisible()) continue;
+
+            // Target Bone Logic
+            Vector3 targetPos = player->GetRootPosition();
+            if (Config::aimbot_bone == 0) targetPos.y += 1.6f;      // Head
+            else if (Config::aimbot_bone == 1) targetPos.y += 1.35f; // Neck
+            else if (Config::aimbot_bone == 2) targetPos.y += 1.1f;  // Chest
+            else targetPos.y += 0.8f;                                // Pelvis
+            
+            if (Config::aimbot_follow_crouched && player->isCrouch()) {
+                targetPos.y -= 0.5f; // Adjust down if crouched
             }
 
-            FVector screenPos;
-            if (Visuals::WorldToScreen(currentLoc, camera, screenWidth, screenHeight, screenPos)) {
-                float distToCrosshair = std::sqrt(std::pow(screenPos.X - center.x, 2) + std::pow(screenPos.Y - center.y, 2));
-                float fovMapping = distToCrosshair / (screenWidth / 90.0f); 
-                
-                if (fovMapping < bestFov) {
-                    // Priority is a mix of distance to crosshair, real 3D distance, and absolute health
-                    float realDist = originalLoc.Distance(cameraLoc) / 100.0f;
-                    float hpWeight = player.GetHealth() / player.GetMaxHealth();
-                    
-                    // Complex priority score algorithm
-                    float currentPriority = (fovMapping * 0.6f) + (realDist * 0.3f) + (hpWeight * 0.1f);
-                    validTargets.push_back({player, currentPriority});
+            Vector2 w2sPos;
+            if (Visuals::WorldToScreen(targetPos, &w2sPos, viewMatrix)) {
+                // FOV Check
+                float fovDist = Vector2(w2sPos.x, w2sPos.y).Distance(ScreenCenter);
+                if (fovDist > Config::aimbot_fov) continue;
+
+                float worldDist = Vector3(localPos.x, localPos.y, localPos.z).Distance(targetPos);
+
+                // Targeting Style Algorithm
+                float score = 0.f;
+                if (Config::aimbot_targeting == 0)      score = fovDist; // Closest to Crosshair
+                else if (Config::aimbot_targeting == 1) score = worldDist; // Closest Distance
+                else                                    score = fovDist + worldDist * 0.01f; // Hybrid
+
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestPlayer = player;
                 }
             }
         }
         
-        if (validTargets.empty()) return std::nullopt;
-        
-        // Sort by best score
-        std::sort(validTargets.begin(), validTargets.end(), [](const TargetResult& a, const TargetResult& b) {
-            return a.priorityScore < b.priorityScore;
-        });
-
-        return validTargets.front().targetEntity;
+        return bestPlayer;
     }
 
-    inline void AimAt(const FVector& target, const LocalPlayer& localPlayer, const Camera& camera) {
-        FVector camLoc = camera.GetLocation();
+    inline void RunAimbot(CPlayer* targetPlayer, Matrix4x4 viewMatrix, float dt) {
+        if (!targetPlayer) return;
+
+        Vector3 targetPos = targetPlayer->GetRootPosition();
+        if (Config::aimbot_bone == 0) targetPos.y += 1.6f;
+        else if (Config::aimbot_bone == 1) targetPos.y += 1.35f;
+        else if (Config::aimbot_bone == 2) targetPos.y += 1.1f;
+        else targetPos.y += 0.8f;
         
-        FRotator currentRot = localPlayer.GetControlRotation();
-        FRotator targetRot = Math::CalcAngle(camLoc, target);
-        
-        Math::ClampAngle(targetRot);
-        
-        if (Config::aimbot_smooth > 1.0f) {
-            targetRot = AdvancedSmooth(currentRot, targetRot, Config::aimbot_smooth);
+        if (Config::aimbot_follow_crouched && targetPlayer->isCrouch()) {
+            targetPos.y -= 0.5f; 
         }
-        
-        localPlayer.SetControlRotation(targetRot);
+
+        Vector2 w2sPos;
+        if (Visuals::WorldToScreen(targetPos, &w2sPos, viewMatrix)) {
+            
+            float dx = w2sPos.x - ScreenCenter.x;
+            float dy = w2sPos.y - ScreenCenter.y;
+            
+            float distToTarget = std::sqrt(dx * dx + dy * dy);
+            
+            // Mouse event hardware fluid injection (Non-blocking)
+            if (distToTarget >= 2.0f) {
+                float smoothX = Config::aimbot_smooth >= 1.f ? Config::aimbot_smooth : 1.f;
+                float smoothY = Config::aimbot_smooth >= 1.f ? Config::aimbot_smooth : 1.f;
+                
+                if (dt <= 0.f || dt > 0.05f) dt = 0.016f;
+                
+                float strengthX = 30.0f / smoothX;
+                float strengthY = 30.0f / smoothY;
+                
+                float stepFactorX = 1.0f - std::exp(-strengthX * dt);
+                float stepFactorY = 1.0f - std::exp(-strengthY * dt);
+                
+                // Humanization
+                if (stepFactorX > 0.92f) stepFactorX = 0.92f;
+                if (stepFactorY > 0.92f) stepFactorY = 0.92f;
+
+                int moveX = static_cast<int>(dx * stepFactorX);
+                int moveY = static_cast<int>(dy * stepFactorY);
+                
+                if (moveX != 0 || moveY != 0) {
+                    // Maximum flick clamping 
+                    if (moveX > 500) moveX = 500; else if (moveX < -500) moveX = -500;
+                    if (moveY > 500) moveY = 500; else if (moveY < -500) moveY = -500;
+                    
+                    mouse_event(MOUSEEVENTF_MOVE, moveX, moveY, 0, 0);
+                }
+            }
+        }
     }
 }
