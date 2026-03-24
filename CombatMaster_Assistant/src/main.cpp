@@ -7,10 +7,8 @@
 #include "ui/Config.h"
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
-#ifdef _DEBUG
     Console::Alloc();
-    Logger::Log("Nexus Overlay - Debug Mode");
-#endif
+    Logger::Log("Nexus Overlay - Initializing Console");
 
     Config::Load("config.json");
 
@@ -19,8 +17,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     Renderer renderer;
     renderer.Run();
 
-#ifdef _DEBUG
     Console::Free();
-#endif
     return 0;
 }

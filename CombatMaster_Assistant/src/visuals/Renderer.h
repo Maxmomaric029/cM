@@ -108,10 +108,23 @@ private:
         LocalPlayer localPlayer = game.GetLocalPlayer();
         Camera camera = game.GetCamera();
         
-        if (!localPlayer.IsValid() || !camera.IsValid()) return;
+        if (!localPlayer.IsValid() || !camera.IsValid()) {
+            static DWORD lastEspLog = 0;
+            if (GetTickCount() - lastEspLog > 5000) {
+                Logger::Error("[ESP] Core entities invalid. LocalPlayer: " + std::to_string(localPlayer.IsValid()) + " | Camera: " + std::to_string(camera.IsValid()));
+                lastEspLog = GetTickCount();
+            }
+            return;
+        }
         
         auto players = game.GetPlayers();
         int localTeam = localPlayer.GetTeamId();
+        
+        static DWORD lastPlayerLog = 0;
+        if (GetTickCount() - lastPlayerLog > 5000) {
+            Logger::Log("[ESP] Tracking target entities: " + std::to_string(players.size()) + " (Filtered from general actors)");
+            lastPlayerLog = GetTickCount();
+        }
         
         std::optional<Entity> aimTarget = std::nullopt;
         

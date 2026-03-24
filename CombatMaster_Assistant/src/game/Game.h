@@ -23,31 +23,31 @@ public:
         auto& mem = Memory::Get();
         uWorld = mem.Read<uintptr_t>(mem.GetBaseAddress() + Offsets::GWORLD_OFFSET);
         if (!uWorld) {
-            static bool loggedW = false; if (!loggedW) { Logger::Error("[Game::Update] Failed to read UWorld. Is GWORLD_OFFSET (" + std::to_string(Offsets::GWORLD_OFFSET) + ") correct?"); loggedW = true; }
+            static DWORD lastLog1 = 0; if (GetTickCount() - lastLog1 > 5000) { Logger::Error("[Game::Update] Failed to read UWorld"); lastLog1 = GetTickCount(); }
             return false;
         }
 
         gameInstance = mem.Read<uintptr_t>(uWorld + Offsets::UWORLD_OWNINGGAMEINSTANCE);
         if (!gameInstance) {
-            static bool loggedI = false; if (!loggedI) { Logger::Error("[Game::Update] Failed to read GameInstance at UWorld + " + std::to_string(Offsets::UWORLD_OWNINGGAMEINSTANCE)); loggedI = true; }
+            static DWORD lastLog2 = 0; if (GetTickCount() - lastLog2 > 5000) { Logger::Error("[Game::Update] Failed to read GameInstance"); lastLog2 = GetTickCount(); }
             return false;
         }
 
         uintptr_t localPlayersArray = mem.Read<uintptr_t>(gameInstance + Offsets::GAMEINSTANCE_LOCALPLAYERS);
         if (!localPlayersArray) {
-            static bool loggedL = false; if (!loggedL) { Logger::Error("[Game::Update] Failed to read LocalPlayersArray"); loggedL = true; }
+            static DWORD lastLog3 = 0; if (GetTickCount() - lastLog3 > 5000) { Logger::Error("[Game::Update] Failed to read LocalPlayersArray"); lastLog3 = GetTickCount(); }
             return false;
         }
 
         localPlayerPtr = mem.Read<uintptr_t>(localPlayersArray); // First local player
         if (!localPlayerPtr) {
-            static bool loggedP = false; if (!loggedP) { Logger::Error("[Game::Update] Failed to read LocalPlayer[0]"); loggedP = true; }
+            static DWORD lastLog4 = 0; if (GetTickCount() - lastLog4 > 5000) { Logger::Error("[Game::Update] Failed to read LocalPlayer[0]"); lastLog4 = GetTickCount(); }
             return false;
         }
 
         playerController = mem.Read<uintptr_t>(localPlayerPtr + Offsets::LOCALPLAYER_PLAYERCONTROLLER);
         if (!playerController) {
-            static bool loggedC = false; if (!loggedC) { Logger::Error("[Game::Update] Failed to read PlayerController"); loggedC = true; }
+            static DWORD lastLog5 = 0; if (GetTickCount() - lastLog5 > 5000) { Logger::Error("[Game::Update] Failed to read PlayerController"); lastLog5 = GetTickCount(); }
             return false;
         }
 
@@ -82,26 +82,26 @@ public:
         
         uintptr_t persistentLevel = mem.Read<uintptr_t>(uWorld + Offsets::UWORLD_PERSISTENTLEVEL);
         if (!persistentLevel) {
-            static bool loggedPL = false; if (!loggedPL) { Logger::Error("[Game::GetPlayers] Failed to read PersistentLevel"); loggedPL = true; }
+            static DWORD lastLogPL = 0; if (GetTickCount() - lastLogPL > 5000) { Logger::Error("[Game::GetPlayers] Failed to read PersistentLevel"); lastLogPL = GetTickCount(); }
             return cachedPlayers;
         }
         
         uintptr_t actorsArray = mem.Read<uintptr_t>(persistentLevel + Offsets::ULEVEL_ACTORS);
         int actorCount = mem.Read<int>(persistentLevel + Offsets::ULEVEL_ACTORCOUNT);
         
-        static bool debugged = false;
-        if (!debugged && actorsArray) {
-            Logger::Log("Successfully dumped UWorld! Actor Count: " + std::to_string(actorCount));
-            debugged = true;
+        static DWORD lastScanTime = 0;
+        if (actorsArray && GetTickCount() - lastScanTime > 5000) {
+            Logger::Log("[Game::GetPlayers] UWorld linked. Base Actor Count: " + std::to_string(actorCount));
+            lastScanTime = GetTickCount();
         }
 
         if (!actorsArray) {
-            static bool loggedA = false; if (!loggedA) { Logger::Error("[Game::GetPlayers] Failed to read ActorsArray"); loggedA = true; }
+            static DWORD lastLogA = 0; if (GetTickCount() - lastLogA > 5000) { Logger::Error("[Game::GetPlayers] Failed to read ActorsArray"); lastLogA = GetTickCount(); }
             return cachedPlayers;
         }
 
         if (actorCount <= 0 || actorCount > 10000) {
-            static bool loggedC = false; if (!loggedC) { Logger::Error("[Game::GetPlayers] Invalid ActorCount: " + std::to_string(actorCount) + " (Max: 10000). Check ULEVEL_ACTORCOUNT offset."); loggedC = true; }
+            static DWORD lastLogC = 0; if (GetTickCount() - lastLogC > 5000) { Logger::Error("[Game::GetPlayers] Invalid ActorCount: " + std::to_string(actorCount)); lastLogC = GetTickCount(); }
             return cachedPlayers;
         }
         
