@@ -22,14 +22,12 @@
 #include "../hooks/WeaponHooks.h"
 #include "../hooks/RecoilPatch.h"
 #include "../hooks/MovementHooks.h"
+#include "../Global.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 typedef HRESULT(__stdcall* Present_t)(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags);
 typedef LRESULT(CALLBACK* WNDPROC_t)(HWND, UINT, WPARAM, LPARAM);
-
-// Global module handle for clean unload
-inline HMODULE g_hInjectModule = nullptr;
 
 class Renderer {
 private:
@@ -40,7 +38,6 @@ private:
     ID3D11DeviceContext* pContext = nullptr;
     ID3D11RenderTargetView* mainRenderTargetView = nullptr;
     bool initImgui = false;
-    bool unloadRequested = false;
 
     int screenWidth = 0;
     int screenHeight = 0;
@@ -66,9 +63,9 @@ private:
 
         // --- Clean unload on DELETE key ---
         if (GetAsyncKeyState(Config::unload_key) & 1)
-            renderer.unloadRequested = true;
+            g_UnloadRequested = true;
 
-        if (renderer.unloadRequested && renderer.initImgui) {
+        if (g_UnloadRequested && renderer.initImgui) {
             // Restore movement hooks
             MovementHooks::Restore();
             // Unhook weapon hooks
@@ -481,7 +478,7 @@ public:
         Logger::Log("DX11 Present hooked successfully!");
 
         // Wait for unload signal instead of infinite loop
-        while (!unloadRequested) {
+        while (!g_UnloadRequested) {
             Sleep(100);
         }
         // Small delay to let the unload in hkPresent complete

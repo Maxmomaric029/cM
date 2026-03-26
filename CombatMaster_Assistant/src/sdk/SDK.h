@@ -10,8 +10,12 @@ public:
     wchar_t buffer[128];
     std::string ToString() {
         if (!this || length <= 0 || length > 128) return "Unknown";
-        std::wstring ws(buffer, length);
-        return std::string(ws.begin(), ws.end());
+        std::string s;
+        s.reserve(length);
+        for (int i = 0; i < length; i++) {
+            s += static_cast<char>(buffer[i]);
+        }
+        return s;
     }
     std::wstring ToWString() {
         if (!this || length <= 0 || length > 128) return L"Unknown";

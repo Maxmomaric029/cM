@@ -5,6 +5,7 @@
 #include <string>
 #include "Config.h"
 #include "Icons.h"
+#include "../Global.h"
 
 namespace Menu {
     inline bool bShowMenu = true;
@@ -197,7 +198,6 @@ namespace Menu {
             ImGui::Separator();
             if (ImGui::Button("UNLOAD DLL NOW", ImVec2(-1, 40))) {
                 // Trigger unload logic in renderer
-                extern bool g_UnloadRequested;
                 g_UnloadRequested = true;
             }
         }

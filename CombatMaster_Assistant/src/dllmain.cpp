@@ -4,6 +4,7 @@
 #include "utils/Console.h"
 #include "visuals/Renderer.h"
 #include "ui/Config.h"
+#include "Global.h"
 
 DWORD WINAPI MainThread(LPVOID lpReserved) {
     Console::Alloc();
