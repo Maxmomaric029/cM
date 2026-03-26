@@ -153,7 +153,6 @@ private:
                     io.Fonts->AddFontFromFileTTF(iconsPath.c_str(), 20.0f, &icons_config, icon_ranges);
                 }
                 
-                io.Fonts->Build(); // Explicitly build fonts to catch errors
 
                 ImGui_ImplWin32_Init(renderer.window);
                 ImGui_ImplDX11_Init(renderer.pDevice, renderer.pContext);
