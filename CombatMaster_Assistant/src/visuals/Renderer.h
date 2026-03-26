@@ -132,6 +132,29 @@ private:
                 ImGui::CreateContext();
                 Theme::Apply();
 
+                // Load fonts
+                ImGuiIO& io = ImGui::GetIO();
+                char path[MAX_PATH];
+                GetModuleFileNameA(g_hInjectModule, path, MAX_PATH);
+                std::string dllDir = std::string(path);
+                size_t lastSlash = dllDir.find_last_of("\\/");
+                if (lastSlash != std::string::npos) dllDir = dllDir.substr(0, lastSlash);
+
+                std::string oswaldPath = dllDir + "\\fonts\\Oswald-Regular.ttf";
+                std::string iconsPath = dllDir + "\\fonts\\MaterialIcons-Regular.ttf";
+
+                if (GetFileAttributesA(oswaldPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                    io.Fonts->AddFontFromFileTTF(oswaldPath.c_str(), 18.0f);
+                }
+                
+                if (GetFileAttributesA(iconsPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                    static const ImWchar icon_ranges[] = { 0xE000, 0xF8FF, 0 };
+                    ImFontConfig icons_config;
+                    icons_config.MergeMode = true;
+                    icons_config.PixelSnapH = true;
+                    io.Fonts->AddFontFromFileTTF(iconsPath.c_str(), 20.0f, &icons_config, icon_ranges);
+                }
+
                 ImGui_ImplWin32_Init(renderer.window);
                 ImGui_ImplDX11_Init(renderer.pDevice, renderer.pContext);
 

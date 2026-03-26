@@ -81,30 +81,42 @@ uintptr_t GetModuleBaseAddress(DWORD procId, const std::wstring& modName, uintpt
 struct SigData {
     std::string Name;
     std::string Pattern;
+    int Extra; // Offset for RIP relative or similar
 };
 
 int main() {
-    SetConsoleTitleW(L"Combat Master Dumper - UnknownCheats Sigs");
-    std::cout << "[*] Waiting for CombatMaster.exe..." << std::endl;
+    SetConsoleTitleW(L"Bloodstrike Dumper (Messiah Engine) - Nexus");
+    std::cout << "[*] Searching for Bloodstrike process..." << std::endl;
 
-    DWORD pid = 0;
+    DWORD pid = GetProcessIdByName(L"Bloodstrike.exe");
+    if (!pid) pid = GetProcessIdByName(L"Bloodstrike_PC.exe");
+    
     while (!pid) {
-        pid = GetProcessIdByName(L"CombatMaster.exe");
+        std::cout << "[!] Waiting for Bloodstrike.exe / Bloodstrike_PC.exe..." << std::endl;
+        pid = GetProcessIdByName(L"Bloodstrike.exe");
+        if (!pid) pid = GetProcessIdByName(L"Bloodstrike_PC.exe");
         Sleep(1000);
     }
 
-    std::cout << "[+] Found CombatMaster.exe (PID: " << pid << ")" << std::endl;
+    std::cout << "[+] Found process (PID: " << pid << ")" << std::endl;
 
     uintptr_t modSize = 0;
-    uintptr_t modBase = GetModuleBaseAddress(pid, L"GameAssembly.dll", modSize);
+    // Messiah Engine usually uses Project.dll or the main exe
+    uintptr_t modBase = GetModuleBaseAddress(pid, L"Project.dll", modSize);
+    std::wstring modNameTarget = L"Project.dll";
     
     if (!modBase) {
-        std::cerr << "[-] Failed to find GameAssembly.dll. Is the game fully loaded?" << std::endl;
+        modBase = GetModuleBaseAddress(pid, L"GameAssembly.dll", modSize);
+        modNameTarget = L"GameAssembly.dll";
+    }
+
+    if (!modBase) {
+        std::cerr << "[-] Failed to find Project.dll or GameAssembly.dll." << std::endl;
         system("pause");
         return 1;
     }
 
-    std::cout << "[+] GameAssembly.dll Base: 0x" << std::hex << modBase << " Size: 0x" << modSize << std::endl;
+    std::wcout << L"[+] Target Module: " << modNameTarget << L" Base: 0x" << std::hex << modBase << L" Size: 0x" << modSize << std::endl;
 
     HANDLE hProc = OpenProcess(PROCESS_VM_READ, FALSE, pid);
     if (!hProc) {
@@ -113,7 +125,7 @@ int main() {
         return 1;
     }
 
-    std::cout << "[*] Dumping GameAssembly.dll to memory..." << std::endl;
+    std::cout << "[*] Dumping module to memory..." << std::endl;
     std::vector<uint8_t> dump(modSize);
     SIZE_T bytesRead;
     if (!ReadProcessMemory(hProc, (LPCVOID)modBase, dump.data(), modSize, &bytesRead)) {
@@ -124,19 +136,21 @@ int main() {
     }
 
     std::vector<SigData> sigs = {
-        {"get_transform", "40 ? 48 83 EC ? 48 8B ? ? ? ? ? 48 8B ? 48 85 ? 75 ? 48 8D ? ? ? ? ? E8 ? ? ? ? 48 89 ? ? ? ? ? 48 8B ? 48 83 C4 ? 5B 48 FF ? CC CC CC CC CC CC CC CC CC CC CC CC CC 48 89 ? ? ? 57 48 83 EC ? 48 8B ? ? ? ? ? 48 8B ? 48 8B ? 48 85 ? 75 ? 48 8D ? ? ? ? ? E8 ? ? ? ? 48 89 ? ? ? ? ? 48 8B ? FF D0 48 8B"},
-        {"get_transform_position", "48 89 ? ? ? 57 48 83 EC ? 33 C0 48 8B ? 48 89 ? 48 8B ? 89 41 ? 48 8B ? ? ? ? ? 48 85 ? 75 ? 48 8D ? ? ? ? ? E8 ? ? ? ? 48 89 ? ? ? ? ? 48 8B ? 48 8B ? FF D0 48 8B ? 48 8B ? ? ? 48 83 C4 ? 5F C3 CC CC CC 48 89 ? ? ? 57 48 83 EC ? 33 C0 0F 57"},
-        {"get_teamid", "40 ? 48 83 EC ? 80 3D A3 26 CD 02"},
-        {"get_camera", "48 83 EC ? 48 8B ? ? ? ? ? 48 85 ? 75 ? 48 8D ? ? ? ? ? E8 ? ? ? ? 48 89 ? ? ? ? ? 48 83 C4 ? 48 FF ? CC CC CC CC CC CC 40 ? 48 83 EC ? 48 8B ? ? ? ? ? 48 8B ? 48 85 ? 75 ? 48 8D ? ? ? ? ? E8 ? ? ? ? 48 89 ? ? ? ? ? 48 8B ? 48 83 C4 ? 5B 48 FF ? CC CC CC CC CC CC CC CC CC CC CC CC CC 48 89 ? ? ? 57 48 83 EC ? 48 8B ? ? ? ? ? 48 8B ? 48 8B ? 48 85 ? 75 ? 48 8D ? ? ? ? ? E8 ? ? ? ? 48 89 ? ? ? ? ? 48 8B ? 48 8B ? 48 8B ? ? ? 48 83 C4 ? 5F 48 FF ? CC CC CC CC CC CC CC CC CC CC CC CC CC CC 48 89 ? ? ? 57"}
+        // Messiah Engine / Bloodstrike Signatures
+        {"adrObjects", "48 8D 2D ? ? ? ? 48 2B FD", 0x38},
+        {"adrD3D11Device", "48 8B 0D ? ? ? ? 48 8B D9 48 89 4C 24 ? 45 33 ED 45 8D 65 FF", 0},
+        {"get_camera", "48 83 EC ? 48 8B ? ? ? ? ? 48 85 ? 75 ? 48 8D ? ? ? ? ? E8", 0},
+        {"get_localplayer", "48 8B 05 ? ? ? ? 48 85 C0 74 ? 48 8B 40 ? 48 85 C0 74 ? 48 8B 80", 0}
     };
 
     std::cout << "\n[+] Scanning for Signatures...\n" << std::endl;
-    std::ofstream outFile("Dumped_RVAs.txt");
+    std::ofstream outFile("Bloodstrike_Offsets.txt");
 
     for (const auto& sig : sigs) {
         uintptr_t result = FindPattern(dump, sig.Pattern);
         if (result) {
-            std::cout << "constexpr uintptr_t " << sig.Name << " = 0x" << std::uppercase << std::hex << result << ";" << std::endl;
+            // Calculate actual RVA for RIP relative if needed (skipped for now as placeholder)
+            std::cout << "constexpr uintptr_t " << sig.Name << " = 0x" << std::uppercase << std::hex << result << "; // + extra: " << sig.Extra << std::endl;
             outFile << "constexpr uintptr_t " << sig.Name << " = 0x" << std::uppercase << std::hex << result << ";" << std::endl;
         } else {
             std::cout << "// FAILED TO FIND: " << sig.Name << std::endl;
@@ -147,7 +161,7 @@ int main() {
     outFile.close();
     CloseHandle(hProc);
     
-    std::cout << "\n[+] Dump saved to Dumped_RVAs.txt" << std::endl;
+    std::cout << "\n[+] Offsets saved to Bloodstrike_Offsets.txt" << std::endl;
     system("pause");
     return 0;
 }
