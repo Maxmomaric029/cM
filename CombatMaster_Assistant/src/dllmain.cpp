@@ -7,14 +7,17 @@
 
 DWORD WINAPI MainThread(LPVOID lpReserved) {
     Console::Alloc();
-    Logger::Log("Nexus Internal - Initializing Console");
+    Logger::Log("Nexus Internal - Initializing");
 
-    Config::Load("C:\\Nexus_Config.json"); // Changed path to root to avoid write permission issues in game dir
+    // Store module handle globally for clean unload
+    g_hInjectModule = (HMODULE)lpReserved;
+
+    Config::Load("nexus_config.json");
 
     Logger::Log("Nexus Internal Injected. Hooking DX11...");
 
-    // Initialize Renderer (Hooking DX11 SwapChain)
-    Renderer::Get().Init(); // This will block until the cheat unloads
+    // Initialize Renderer (hooks DX11 SwapChain, blocks until unload)
+    Renderer::Get().Init();
 
     Logger::Log("Nexus Internal Unloading...");
     Console::Free();

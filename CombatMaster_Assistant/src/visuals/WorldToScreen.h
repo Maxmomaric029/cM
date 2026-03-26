@@ -3,6 +3,8 @@
 
 namespace Visuals {
 
+    inline Vector2 ScreenCenter;
+
     // Unity IL2CPP ViewMatrix WorldToScreen (No more UE4 FVector/FRotator math)
     inline bool WorldToScreen(const Vector3& position, Vector2* outPos, Matrix4x4 viewMatrix) {
         float m00 = viewMatrix.m[0][0], m01 = viewMatrix.m[0][1], m02 = viewMatrix.m[0][2], m03 = viewMatrix.m[0][3];
@@ -20,8 +22,6 @@ namespace Visuals {
         float x = m00 * position.x + m10 * position.y + m20 * position.z + m30;
         float y = m01 * position.x + m11 * position.y + m21 * position.z + m31;
 
-        // Note: Assuming ScreenCenter is passed from Renderer or Config context
-        extern Vector2 ScreenCenter; // To be fed dynamic center data
 
         float screenX = (ScreenCenter.x) * (1.f + x * invW);
         float screenY = (ScreenCenter.y) * (1.f - y * invW);

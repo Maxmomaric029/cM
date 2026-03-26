@@ -1,0 +1,34 @@
+﻿diff --git a/CombatMaster_Assistant/src/targeting/aimassist.h b/CombatMaster_Assistant/src/targeting/aimassist.h
+index da1c3b4..51bb94c 100644
+--- a/CombatMaster_Assistant/src/targeting/aimassist.h
++++ b/CombatMaster_Assistant/src/targeting/aimassist.h
+@@ -11,10 +11,6 @@ inline Vector2 ScreenCenter;
+ 
+ namespace Aimbot {
+ 
+-    // Converts Unity Vector3 to internal FVector to remain compatible with older struct passes if needed
+-    inline FVector ToFVector(const Vector3& v) {
+-        return FVector(v.x, v.y, v.z);
+-    }
+ 
+     inline CPlayer* GetBestTarget(Matrix4x4 viewMatrix, int screenWidth, int screenHeight) {
+         float bestScore = 999999.0f;
+diff --git a/CombatMaster_Assistant/src/visuals/Renderer.h b/CombatMaster_Assistant/src/visuals/Renderer.h
+index 7f4d68b..3f54cd2 100644
+--- a/CombatMaster_Assistant/src/visuals/Renderer.h
++++ b/CombatMaster_Assistant/src/visuals/Renderer.h
+@@ -176,11 +176,9 @@ private:
+ 
+                 if (Config::esp_names) {
+                     if (player->GetConnectData()) {
+-                        UnityString* uname = player->GetConnectData()->GetNickName();
+-                        if (uname) {
+-                            std::string narrowName = uname->ToString();
+-                            ESP::DrawTextCentered(narrowName, headScreenPos.x, y - 16, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
+-                        }
++                        std::wstring wname = player->GetConnectData()->NickName();
++                        std::string narrowName(wname.begin(), wname.end());
++                        ESP::DrawTextCentered(narrowName, headScreenPos.x, y - 16, ImGui::GetColorU32(ImVec4(1, 1, 1, 1)));
+                     }
+                 }
+ 
