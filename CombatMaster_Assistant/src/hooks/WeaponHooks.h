@@ -1,10 +1,12 @@
 #pragma once
 #include <windows.h>
 #include <MinHook.h>
-#include "../sdk/SDK.h"
+#include "../memory/Memory.h"
+#include "../memory/Offsets.h"
 #include "../ui/Config.h"
 
-// Weapon function hooks using MinHook (adapted from reference Detours implementation)
+// Weapon function hooks using MinHook
+// All addresses are RVAs relative to Project.dll (Memory::Get().GetBaseAddress())
 namespace WeaponHooks {
     using tGetUnCharged = int(__fastcall*)(uintptr_t);
     using tGetCharged = int(__fastcall*)(uintptr_t);
@@ -19,11 +21,15 @@ namespace WeaponHooks {
     inline bool g_InMatch = false;
     inline uintptr_t g_LocalWeapon = 0;
 
-    // Hook targets (raw pointers for MH_CreateHook)
+    // Track which hooks succeeded for proper cleanup
     inline void* pGetUnCharged = nullptr;
     inline void* pGetCharged = nullptr;
     inline void* pGetIsUseCooldown = nullptr;
     inline void* pGetLethal = nullptr;
+    inline bool hookUnCharged = false;
+    inline bool hookCharged = false;
+    inline bool hookCooldown = false;
+    inline bool hookLethal = false;
 
     static int __fastcall hk_GetUnCharged(uintptr_t _this) {
         __try {
@@ -56,34 +62,67 @@ namespace WeaponHooks {
         return o_GetLethal ? o_GetLethal(_this) : 0;
     }
 
+    // Helper: check if an address looks like valid executable code
+    static bool IsValidCodeAddress(void* addr) {
+        if (!addr) return false;
+        MEMORY_BASIC_INFORMATION mbi;
+        if (VirtualQuery(addr, &mbi, sizeof(mbi)) == 0) return false;
+        return (mbi.State == MEM_COMMIT) &&
+               (mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY));
+    }
+
     inline bool Init() {
         uintptr_t base = Memory::Get().GetBaseAddress();
         if (!base) return false;
 
+        int hookCount = 0;
+        int totalHooks = 4;
+
+        // Validate each address before attempting to hook
         pGetUnCharged = (void*)(base + Offsets::weapon_rva::get_UnChargedAmmoLeft);
-        pGetCharged = (void*)(base + Offsets::weapon_rva::get_ChargedAmmoLeft);
-        pGetIsUseCooldown = (void*)(base + Offsets::ShootWeapon_rva::get_IsUseCooldown);
-        pGetLethal = (void*)(base + Offsets::weapon_rva::get_LethalWeaponTotalAmmoLeft);
-
-        bool ok = true;
-        if (MH_CreateHook(pGetUnCharged, &hk_GetUnCharged, reinterpret_cast<void**>(&o_GetUnCharged)) != MH_OK) ok = false;
-        if (MH_CreateHook(pGetCharged, &hk_GetCharged, reinterpret_cast<void**>(&o_GetCharged)) != MH_OK) ok = false;
-        if (MH_CreateHook(pGetIsUseCooldown, &hk_GetIsUseCooldown, reinterpret_cast<void**>(&o_GetIsUseCooldown)) != MH_OK) ok = false;
-        if (MH_CreateHook(pGetLethal, &hk_GetLethal, reinterpret_cast<void**>(&o_GetLethal)) != MH_OK) ok = false;
-
-        if (ok) {
-            MH_EnableHook(pGetUnCharged);
-            MH_EnableHook(pGetCharged);
-            MH_EnableHook(pGetIsUseCooldown);
-            MH_EnableHook(pGetLethal);
+        if (IsValidCodeAddress(pGetUnCharged)) {
+            if (MH_CreateHook(pGetUnCharged, &hk_GetUnCharged, reinterpret_cast<void**>(&o_GetUnCharged)) == MH_OK) {
+                MH_EnableHook(pGetUnCharged);
+                hookUnCharged = true;
+                hookCount++;
+            }
         }
-        return ok;
+
+        pGetCharged = (void*)(base + Offsets::weapon_rva::get_ChargedAmmoLeft);
+        if (IsValidCodeAddress(pGetCharged)) {
+            if (MH_CreateHook(pGetCharged, &hk_GetCharged, reinterpret_cast<void**>(&o_GetCharged)) == MH_OK) {
+                MH_EnableHook(pGetCharged);
+                hookCharged = true;
+                hookCount++;
+            }
+        }
+
+        pGetIsUseCooldown = (void*)(base + Offsets::ShootWeapon_rva::get_IsUseCooldown);
+        if (IsValidCodeAddress(pGetIsUseCooldown)) {
+            if (MH_CreateHook(pGetIsUseCooldown, &hk_GetIsUseCooldown, reinterpret_cast<void**>(&o_GetIsUseCooldown)) == MH_OK) {
+                MH_EnableHook(pGetIsUseCooldown);
+                hookCooldown = true;
+                hookCount++;
+            }
+        }
+
+        pGetLethal = (void*)(base + Offsets::weapon_rva::get_LethalWeaponTotalAmmoLeft);
+        if (IsValidCodeAddress(pGetLethal)) {
+            if (MH_CreateHook(pGetLethal, &hk_GetLethal, reinterpret_cast<void**>(&o_GetLethal)) == MH_OK) {
+                MH_EnableHook(pGetLethal);
+                hookLethal = true;
+                hookCount++;
+            }
+        }
+
+        return hookCount > 0; // At least some hooks worked
     }
 
     inline void Unhook() {
-        if (pGetUnCharged) MH_DisableHook(pGetUnCharged);
-        if (pGetCharged) MH_DisableHook(pGetCharged);
-        if (pGetIsUseCooldown) MH_DisableHook(pGetIsUseCooldown);
-        if (pGetLethal) MH_DisableHook(pGetLethal);
+        if (hookUnCharged && pGetUnCharged) MH_DisableHook(pGetUnCharged);
+        if (hookCharged && pGetCharged) MH_DisableHook(pGetCharged);
+        if (hookCooldown && pGetIsUseCooldown) MH_DisableHook(pGetIsUseCooldown);
+        if (hookLethal && pGetLethal) MH_DisableHook(pGetLethal);
+        hookUnCharged = hookCharged = hookCooldown = hookLethal = false;
     }
 }

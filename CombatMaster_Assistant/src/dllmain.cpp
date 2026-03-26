@@ -12,6 +12,16 @@ DWORD WINAPI MainThread(LPVOID lpReserved) {
     // Store module handle globally for clean unload
     g_hInjectModule = (HMODULE)lpReserved;
 
+    // CRITICAL: Wait for Project.dll to be loaded before doing anything
+    Logger::Log("Waiting for game modules...");
+    if (!Memory::Get().WaitForModules(30000)) {
+        Logger::Error("FATAL: Could not find Project.dll or GameAssembly.dll after 30 seconds!");
+        Console::Free();
+        FreeLibraryAndExitThread((HMODULE)lpReserved, 0);
+        return FALSE;
+    }
+    Logger::Log("Game modules found. Base address resolved.");
+
     Config::Load("nexus_config.json");
 
     Logger::Log("Nexus Internal Injected. Hooking DX11...");

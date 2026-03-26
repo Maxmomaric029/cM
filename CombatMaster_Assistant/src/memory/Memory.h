@@ -21,11 +21,13 @@ struct TArray {
 
 class Memory {
 private:
-    uintptr_t moduleBase = 0;
+    uintptr_t moduleBase = 0;       // Project.dll base (all offsets are relative to this)
+    uintptr_t engineModule = 0;     // GameAssembly.dll
+    uintptr_t gdiModule = 0;        // _CombatMaster.GDI.dll (fallback to Project.dll)
     std::mutex memMutex;
 
     Memory() {
-        moduleBase = (uintptr_t)GetModuleHandle(NULL);
+        // Don't init here — call InitModules() after game is loaded
     }
     Memory(const Memory&) = delete;
     Memory& operator=(const Memory&) = delete;
@@ -38,8 +40,32 @@ public:
         return instance;
     }
 
+    // Wait for Project.dll to be loaded (call from init thread)
+    bool WaitForModules(int timeoutMs = 30000) {
+        int elapsed = 0;
+        while (elapsed < timeoutMs) {
+            moduleBase = (uintptr_t)GetModuleHandleA("Project.dll");
+            if (moduleBase) break;
+            Sleep(100);
+            elapsed += 100;
+        }
+        if (!moduleBase) {
+            // Fallback: try GameAssembly.dll (some Unity builds)
+            moduleBase = (uintptr_t)GetModuleHandleA("GameAssembly.dll");
+        }
+        if (!moduleBase) return false;
+
+        engineModule = (uintptr_t)GetModuleHandleA("GameAssembly.dll");
+        gdiModule = (uintptr_t)GetModuleHandleA("_CombatMaster.GDI.dll");
+        if (!gdiModule) gdiModule = moduleBase;
+
+        return true;
+    }
+
     bool IsAttached() const { return moduleBase != 0; }
     uintptr_t GetBaseAddress() const { return moduleBase; }
+    uintptr_t GetEngineModule() const { return engineModule; }
+    uintptr_t GetGdiModule() const { return gdiModule; }
 
     template <typename T>
     T Read(uintptr_t address) {
