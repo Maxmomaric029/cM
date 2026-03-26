@@ -1,5 +1,7 @@
 #pragma once
 #include <windows.h>
+#include <TlHelp32.h>
+#include <psapi.h>
 #include <string>
 #include <vector>
 #include <mutex>
@@ -21,94 +23,168 @@ struct TArray {
 
 class Memory {
 private:
-    uintptr_t moduleBase = 0;       // Project.dll base (all offsets are relative to this)
-    uintptr_t engineModule = 0;     // GameAssembly.dll
-    uintptr_t gdiModule = 0;        // _CombatMaster.GDI.dll (fallback to Project.dll)
+    HANDLE hProcess    = nullptr;
+    uintptr_t moduleBase   = 0;  // Project.dll base
+    uintptr_t engineModule = 0;  // GameAssembly.dll
+    uintptr_t gdiModule    = 0;  // _CombatMaster.GDI.dll
+    DWORD gamePid      = 0;
     std::mutex memMutex;
 
-    Memory() {
-        // Don't init here — call InitModules() after game is loaded
-    }
+    Memory() {}
     Memory(const Memory&) = delete;
     Memory& operator=(const Memory&) = delete;
 
+    // Enumerate modules in the target process to find a DLL base
+    uintptr_t GetRemoteModuleBase(const char* moduleName) {
+        if (!hProcess || !gamePid) return 0;
+        HMODULE hMods[1024];
+        DWORD cbNeeded = 0;
+        if (!EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded)) return 0;
+        DWORD count = cbNeeded / sizeof(HMODULE);
+        char modName[MAX_PATH];
+        for (DWORD i = 0; i < count; i++) {
+            if (GetModuleBaseNameA(hProcess, hMods[i], modName, sizeof(modName))) {
+                if (_stricmp(modName, moduleName) == 0)
+                    return (uintptr_t)hMods[i];
+            }
+        }
+        return 0;
+    }
+
 public:
-    ~Memory() = default;
+    ~Memory() {
+        if (hProcess) { CloseHandle(hProcess); hProcess = nullptr; }
+    }
 
     static Memory& Get() {
         static Memory instance;
         return instance;
     }
 
-    // Wait for Project.dll to be loaded (call from init thread)
-    bool WaitForModules(int timeoutMs = 30000) {
+    // --- Wait for the game process and open a handle ---
+    bool WaitForProcess(const char* processName, int timeoutMs = 60000) {
+        Logger::Log("[Memory] Waiting for process: " + std::string(processName));
         int elapsed = 0;
         while (elapsed < timeoutMs) {
-            moduleBase = (uintptr_t)GetModuleHandleA("Project.dll");
-            if (moduleBase) break;
-            Sleep(100);
-            elapsed += 100;
+            HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if (snap != INVALID_HANDLE_VALUE) {
+                PROCESSENTRY32 pe{}; pe.dwSize = sizeof(pe);
+                if (Process32First(snap, &pe)) {
+                    do {
+                        if (_stricmp(pe.szExeFile, processName) == 0) {
+                            gamePid = pe.th32ProcessID;
+                            CloseHandle(snap);
+                            goto found;
+                        }
+                    } while (Process32Next(snap, &pe));
+                }
+                CloseHandle(snap);
+            }
+            Sleep(500);
+            elapsed += 500;
         }
-        if (!moduleBase) {
-            // Fallback: try GameAssembly.dll (some Unity builds)
-            moduleBase = (uintptr_t)GetModuleHandleA("GameAssembly.dll");
+        Logger::Error("[Memory] Timed out waiting for process.");
+        return false;
+
+    found:
+        hProcess = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION
+                               | PROCESS_QUERY_INFORMATION, FALSE, gamePid);
+        if (!hProcess) {
+            Logger::Error("[Memory] OpenProcess failed. Run as Administrator.");
+            return false;
         }
-        if (!moduleBase) return false;
-
-        engineModule = (uintptr_t)GetModuleHandleA("GameAssembly.dll");
-        gdiModule = (uintptr_t)GetModuleHandleA("_CombatMaster.GDI.dll");
-        if (!gdiModule) gdiModule = moduleBase;
-
+        Logger::Log("[Memory] Process opened. PID=" + std::to_string(gamePid));
         return true;
     }
 
-    bool IsAttached() const { return moduleBase != 0; }
-    uintptr_t GetBaseAddress() const { return moduleBase; }
-    uintptr_t GetEngineModule() const { return engineModule; }
-    uintptr_t GetGdiModule() const { return gdiModule; }
-
-    template <typename T>
-    T Read(uintptr_t address) {
-        if (!address || IsBadReadPtr((const void*)address, sizeof(T))) return T{};
-        return *reinterpret_cast<T*>(address);
-    }
-    
-    template <typename T>
-    std::optional<T> ReadSafe(uintptr_t address) {
-        if (!address || IsBadReadPtr((const void*)address, sizeof(T))) return std::nullopt;
-        return *reinterpret_cast<T*>(address);
-    }
-
-    template <typename T>
-    bool Write(uintptr_t address, const T& value) {
-        if (!address) return false;
-        
-        DWORD oldProtect;
-        if (VirtualProtect((LPVOID)address, sizeof(T), PAGE_EXECUTE_READWRITE, &oldProtect)) {
-            *reinterpret_cast<T*>(address) = value;
-            VirtualProtect((LPVOID)address, sizeof(T), oldProtect, &oldProtect);
-            return true;
+    // --- Resolve module bases inside the game process ---
+    bool InitModules() {
+        // Allow a moment for modules to load
+        Sleep(1000);
+        int retries = 10;
+        while (retries-- > 0) {
+            moduleBase = GetRemoteModuleBase("Project.dll");
+            if (moduleBase) break;
+            Sleep(500);
         }
-        return false;
+        if (!moduleBase) {
+            moduleBase = GetRemoteModuleBase("GameAssembly.dll");
+        }
+        if (!moduleBase) {
+            Logger::Error("[Memory] Could not find Project.dll or GameAssembly.dll");
+            return false;
+        }
+        engineModule = GetRemoteModuleBase("GameAssembly.dll");
+        gdiModule    = GetRemoteModuleBase("_CombatMaster.GDI.dll");
+        if (!gdiModule) gdiModule = moduleBase;
+
+        Logger::Log("[Memory] Project.dll base: 0x" + [&]{
+            char buf[32]; snprintf(buf, 32, "%llX", (unsigned long long)moduleBase); return std::string(buf);
+        }());
+        return true;
     }
-    
-    template <typename T>
+
+    bool IsAttached()         const { return hProcess != nullptr && moduleBase != 0; }
+    HANDLE GetProcessHandle() const { return hProcess; }
+    DWORD  GetPID()           const { return gamePid; }
+    uintptr_t GetBaseAddress()  const { return moduleBase; }
+    uintptr_t GetEngineModule() const { return engineModule; }
+    uintptr_t GetGdiModule()    const { return gdiModule; }
+
+    // --- Core RPM ---
+    template<typename T>
+    T Read(uintptr_t address) {
+        T value{};
+        if (!hProcess || !address) return value;
+        ReadProcessMemory(hProcess, (LPCVOID)address, &value, sizeof(T), nullptr);
+        return value;
+    }
+
+    template<typename T>
+    std::optional<T> ReadSafe(uintptr_t address) {
+        T value{};
+        if (!hProcess || !address) return std::nullopt;
+        SIZE_T bytesRead = 0;
+        if (!ReadProcessMemory(hProcess, (LPCVOID)address, &value, sizeof(T), &bytesRead)
+            || bytesRead != sizeof(T))
+            return std::nullopt;
+        return value;
+    }
+
+    // --- Core WPM ---
+    template<typename T>
+    bool Write(uintptr_t address, const T& value) {
+        if (!hProcess || !address) return false;
+        SIZE_T bytesWritten = 0;
+        return WriteProcessMemory(hProcess, (LPVOID)address, &value, sizeof(T), &bytesWritten)
+               && bytesWritten == sizeof(T);
+    }
+
+    template<typename T>
     std::vector<T> ReadArray(uintptr_t address, size_t count) {
         std::vector<T> result;
-        if (!address || count == 0 || count > 10000 || IsBadReadPtr((const void*)address, count * sizeof(T))) return result;
-        
+        if (!hProcess || !address || count == 0 || count > 10000) return result;
         result.resize(count);
-        memcpy(result.data(), (void*)address, count * sizeof(T));
+        SIZE_T bytesRead = 0;
+        if (!ReadProcessMemory(hProcess, (LPCVOID)address, result.data(), count * sizeof(T), &bytesRead))
+            result.clear();
         return result;
     }
 
-    std::string ReadString(uintptr_t address, size_t size = 128);
-    std::wstring ReadWString(uintptr_t address, size_t size = 128);
-    std::wstring ReadFString(uintptr_t address);
-    std::string ReadFName(uintptr_t address);
-    
+    bool ReadMemoryBlock(uintptr_t address, void* buffer, size_t size) {
+        if (!hProcess || !address || !buffer || size == 0) return false;
+        SIZE_T bytesRead = 0;
+        return ReadProcessMemory(hProcess, (LPCVOID)address, buffer, size, &bytesRead)
+               && bytesRead == size;
+    }
+
+    // Follows a pointer chain: base → deref → +off[0] → deref → +off[1] → ...
     uintptr_t FindPointer(uintptr_t baseAddress, const std::vector<uintptr_t>& offsets);
 
-    bool ReadMemoryBlock(uintptr_t address, void* buffer, size_t size);
+    std::string  ReadString (uintptr_t address, size_t size = 128);
+    std::wstring ReadWString(uintptr_t address, size_t size = 128);
+    std::wstring ReadFString(uintptr_t address);
+    std::string  ReadFName  (uintptr_t address);
+
     uintptr_t FindPattern(uintptr_t base, size_t size, const char* pattern, const char* mask);
 };

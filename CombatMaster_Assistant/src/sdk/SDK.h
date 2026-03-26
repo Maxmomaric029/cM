@@ -1,261 +1,251 @@
 #pragma once
 #include "framework.h"
 
-// IL2CPP Combat Master SDK - Fixed to match CM Base Internal reference
+// ─────────────────────────────────────────────────────────────────────────────
+// Combat Master External SDK
+// All reads go through Memory::Get().Read<T>(address)
+// NO IL2CPP::CallRVA — function calls on the game process are not possible externally.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Helper macro for brevity
+#define RPM(addr, T)   (Memory::Get().Read<T>(addr))
+#define RPTR(addr)     (Memory::Get().Read<uintptr_t>(addr))
 
 class UnityString {
 public:
-    char pad_0000[0x10];
-    int length;
-    wchar_t buffer[128];
-    std::string ToString() {
-        if (!this || length <= 0 || length > 128) return "Unknown";
-        std::string s;
-        s.reserve(length);
+    // Remote read: given the pointer to the UnityString object in game memory,
+    // read its length + wchar buffer.
+    static std::string ReadFrom(uintptr_t ptr) {
+        if (!ptr) return "Unknown";
+        int length = RPM(ptr + 0x10, int);
+        if (length <= 0 || length > 128) return "Unknown";
+        std::string result;
+        result.reserve(length);
         for (int i = 0; i < length; i++) {
-            s += static_cast<char>(buffer[i]);
+            wchar_t ch = RPM(ptr + 0x14 + i * sizeof(wchar_t), wchar_t);
+            result += static_cast<char>(ch);
         }
-        return s;
-    }
-    std::wstring ToWString() {
-        if (!this || length <= 0 || length > 128) return L"Unknown";
-        return std::wstring(buffer, length);
+        return result;
     }
 };
 
 class CPlayerConnectData {
+    uintptr_t self;
 public:
-    UnityString* GetNickName() {
-        return *(UnityString**)((uintptr_t)this + Offsets::PlayerConnectData::NickName);
+    explicit CPlayerConnectData(uintptr_t addr) : self(addr) {}
+    bool Valid() const { return self != 0; }
+
+    std::string GetNickName() {
+        // NickName is a UnityString* at self + Offsets::PlayerConnectData::NickName
+        uintptr_t usPtr = RPTR(self + Offsets::PlayerConnectData::NickName);
+        return UnityString::ReadFrom(usPtr);
     }
-    std::wstring NickName() {
-        UnityString* us = GetNickName();
-        return us ? us->ToWString() : L"Unknown";
-    }
+
     int GetTeamId() {
-        return IL2CPP::CallRVA<int>(Offsets::rva::get_TeamId, this);
+        // Read team id via known offset instead of RVA call
+        // TeamId is typically stored at a fixed offset — if unknown, return 0
+        return RPM(self + 0x20, int);
     }
 };
 
 class CNetPlayerData {
+    uintptr_t self;
 public:
-    CPlayerConnectData* GetPlayerConnectData() {
-        if (!this) return nullptr;
-        return IL2CPP::CallRVA<CPlayerConnectData*>(Offsets::rva::get_PlayerConnectData, this);
+    explicit CNetPlayerData(uintptr_t addr) : self(addr) {}
+    bool Valid() const { return self != 0; }
+
+    CPlayerConnectData GetPlayerConnectData() {
+        // Follow pointer chain via RPM
+        uintptr_t cdAddr = RPTR(self + 0x18);
+        return CPlayerConnectData(cdAddr);
     }
 };
 
 class Camera {
+    uintptr_t self;
 public:
+    explicit Camera(uintptr_t addr) : self(addr) {}
+    bool Valid() const { return self != 0; }
+
     Matrix4x4 GetViewMatrix() {
-        uintptr_t cachedPtr = *(uintptr_t*)((uintptr_t)this + Offsets::Object::cachedPtr);
+        uintptr_t cachedPtr = RPTR(self + Offsets::Object::cachedPtr);
         if (!cachedPtr) return {};
-        return *(Matrix4x4*)(cachedPtr + Offsets::viewMatrix);
+        return RPM(cachedPtr + Offsets::viewMatrix, Matrix4x4);
     }
     float GetFov() {
-        uintptr_t cachedPtr = *(uintptr_t*)((uintptr_t)this + Offsets::Object::cachedPtr);
+        uintptr_t cachedPtr = RPTR(self + Offsets::Object::cachedPtr);
         if (!cachedPtr) return 0.f;
-        typedef float(__fastcall* get_fov_t)(uintptr_t);
-        get_fov_t fn = (get_fov_t)(Memory::Get().GetBaseAddress() + Offsets::rva::get_fieldOfView);
-        if (fn) return fn(cachedPtr);
-        return *(float*)(cachedPtr + 0x170);
+        return RPM(cachedPtr + 0x170, float);
     }
 };
 
 class CameraController {
+    uintptr_t self;
 public:
-    Camera* GetCamera() {
-        return *(Camera**)((uintptr_t)this + 0x98);
+    explicit CameraController(uintptr_t addr) : self(addr) {}
+    bool Valid() const { return self != 0; }
+
+    Camera GetCamera() {
+        return Camera(RPTR(self + 0x98));
     }
 };
 
 class CPlayerHealth {
+    uintptr_t self;
 public:
-    // Health is stored as int32_t, not float — critical fix from reference
+    explicit CPlayerHealth(uintptr_t addr) : self(addr) {}
+    bool Valid() const { return self != 0; }
+
     float GetHealthPercent() {
-        int32_t currentHealthInt = *(int32_t*)((uintptr_t)this + Offsets::PlayerHealth::currentHealth);
-        return static_cast<float>(currentHealthInt);
+        int32_t hp = RPM(self + Offsets::PlayerHealth::currentHealth, int32_t);
+        return static_cast<float>(hp);
     }
     bool IsInvincible() {
-        typedef bool(__fastcall* IsInvincible_t)(uintptr_t);
-        static IsInvincible_t fn = nullptr;
-        if (!fn) fn = (IsInvincible_t)(Memory::Get().GetBaseAddress() + Offsets::rva::get_IsInvincible);
-        return fn ? fn((uintptr_t)this) : false;
+        // Read field at known offset (no RVA call available externally)
+        return RPM(self + 0xD8, bool);
     }
 };
 
 class CPlayerMovement {
+    uintptr_t self;
 public:
-    bool IsCrouch() {
-        return *(bool*)((uintptr_t)this + Offsets::PlayerMovement::isCrouch);
-    }
+    explicit CPlayerMovement(uintptr_t addr) : self(addr) {}
+    bool Valid() const { return self != 0; }
+    bool IsCrouch() { return RPM(self + Offsets::PlayerMovement::isCrouch, bool); }
 };
 
 class CTransformData {
+    uintptr_t self;
 public:
-    Vector3 GetRootPosition() {
-        return *(Vector3*)((uintptr_t)this + Offsets::TransformData::rootPosition);
-    }
+    explicit CTransformData(uintptr_t addr) : self(addr) {}
+    bool Valid() const { return self != 0; }
+    Vector3 GetRootPosition() { return RPM(self + Offsets::TransformData::rootPosition, Vector3); }
 };
 
 class CTransform {
+    uintptr_t self;
 public:
-    uintptr_t GetCachedPtr() {
-        return *(uintptr_t*)((uintptr_t)this + Offsets::Object::cachedPtr);
-    }
-    CTransformData* GetTransformData() {
+    explicit CTransform(uintptr_t addr) : self(addr) {}
+    bool Valid() const { return self != 0; }
+
+    uintptr_t GetCachedPtr() { return RPTR(self + Offsets::Object::cachedPtr); }
+
+    CTransformData GetTransformData() {
         uintptr_t cachedPtr = GetCachedPtr();
-        if (!cachedPtr) return nullptr;
-        return *(CTransformData**)(cachedPtr + Offsets::Transform::transformData);
+        if (!cachedPtr) return CTransformData(0);
+        return CTransformData(RPTR(cachedPtr + Offsets::Transform::transformData));
     }
     Vector3 GetPosition() {
         auto td = GetTransformData();
-        if (!td) return {};
-        return td->GetRootPosition();
+        if (!td.Valid()) return {};
+        return td.GetRootPosition();
     }
 };
 
 class CPlayer {
+    uintptr_t self;
 public:
-    bool isRealPlayer() { return *(bool*)((uintptr_t)this + Offsets::PlayerRoot::isRealPlayer); }
-    bool isVisible() { return *(bool*)((uintptr_t)this + Offsets::PlayerRoot::isVisible); }
+    explicit CPlayer(uintptr_t addr) : self(addr) {}
+    bool Valid() const { return self != 0; }
+    uintptr_t GetAddress() const { return self; }
 
-    // --- Fixed: Health through PlayerHealth object at 0xB8, reading int32 ---
-    CPlayerHealth* GetPlayerHealth() {
-        return *(CPlayerHealth**)((uintptr_t)this + 0xB8);
+    bool isRealPlayer() { return RPM(self + Offsets::PlayerRoot::isRealPlayer, bool); }
+    bool isVisible()    { return RPM(self + Offsets::PlayerRoot::isVisible,    bool); }
+
+    CPlayerHealth GetPlayerHealth() {
+        return CPlayerHealth(RPTR(self + 0xB8));
     }
     float GetHealth() {
-        CPlayerHealth* ph = GetPlayerHealth();
-        if (!ph) return 0.f;
-        return ph->GetHealthPercent();
+        auto ph = GetPlayerHealth();
+        return ph.Valid() ? ph.GetHealthPercent() : 0.f;
     }
-    bool IsDead() {
-        return GetHealth() <= 0.f;
-    }
-    bool IsInvincible() {
-        CPlayerHealth* ph = GetPlayerHealth();
-        return ph ? ph->IsInvincible() : false;
-    }
+    bool IsDead()       { return GetHealth() <= 0.f; }
+    bool IsInvincible() { auto ph = GetPlayerHealth(); return ph.Valid() && ph.IsInvincible(); }
 
-    // --- Fixed: isCrouch through PlayerMovement at 0xB0 ---
-    CPlayerMovement* GetPlayerMovement() {
-        return *(CPlayerMovement**)((uintptr_t)this + 0xB0);
+    CPlayerMovement GetPlayerMovement() {
+        return CPlayerMovement(RPTR(self + 0xB0));
     }
     bool isCrouch() {
-        CPlayerMovement* pm = GetPlayerMovement();
-        return pm ? pm->IsCrouch() : false;
+        auto pm = GetPlayerMovement();
+        return pm.Valid() ? pm.IsCrouch() : false;
     }
 
-    // --- Fixed: GetRootPosition through neck transform at 0x30 ---
-    CTransform* GetNeckTransform() {
-        return *(CTransform**)((uintptr_t)this + 0x30);
-    }
+    CTransform GetNeckTransform() { return CTransform(RPTR(self + 0x30)); }
     Vector3 GetRootPosition() {
-        CTransform* transform = GetNeckTransform();
-        if (!transform) return {};
-        auto td = transform->GetTransformData();
-        if (!td) return {};
-        return td->GetRootPosition();
+        auto t = GetNeckTransform();
+        if (!t.Valid()) return {};
+        auto td = t.GetTransformData();
+        return td.Valid() ? td.GetRootPosition() : Vector3{};
     }
     Vector3 GetNeckPosition() {
-        CTransform* transform = GetNeckTransform();
-        if (!transform) return {};
-        return transform->GetPosition();
+        auto t = GetNeckTransform();
+        return t.Valid() ? t.GetPosition() : Vector3{};
     }
 
-    // --- Net player data chain (reference pattern) ---
-    CNetPlayerData* GetNetPlayerData() {
-        return *(CNetPlayerData**)((uintptr_t)this + Offsets::PlayerRoot::cachedPlayerData);
+    CNetPlayerData GetNetPlayerData() {
+        return CNetPlayerData(RPTR(self + Offsets::PlayerRoot::cachedPlayerData));
     }
-    CPlayerConnectData* GetConnectData() {
-        CNetPlayerData* nd = GetNetPlayerData();
-        if (!nd) return nullptr;
-        return nd->GetPlayerConnectData();
+    CPlayerConnectData GetConnectData() {
+        return GetNetPlayerData().GetPlayerConnectData();
     }
 
     int GetTeamId() {
-        typedef int(__fastcall* t)(uintptr_t);
-        static t fn = nullptr;
-        if (!fn) fn = (t)(Memory::Get().GetBaseAddress() + Offsets::rva::get_TeamId);
-        return fn ? fn((uintptr_t)this) : 0;
+        // Read directly from field rather than via RVA call
+        return RPM(self + 0x158, int);
     }
-    bool IsTeammate(CPlayer* localPlayer) {
-        if (!localPlayer || localPlayer == this) return false;
-        int myTeam = GetTeamId();
-        int localTeam = localPlayer->GetTeamId();
-        if (myTeam == 0) return false; // FFA or unassigned
+    bool IsTeammate(CPlayer& localPlayer) {
+        if (!localPlayer.Valid() || self == localPlayer.GetAddress()) return false;
+        int myTeam    = GetTeamId();
+        int localTeam = localPlayer.GetTeamId();
+        if (myTeam == 0) return false;
         return myTeam == localTeam;
     }
 
-    CameraController* GetCameraController() {
-        return *(CameraController**)((uintptr_t)this + 0x48);
+    CameraController GetCameraController() {
+        return CameraController(RPTR(self + 0x48));
     }
-    Camera* GetCamera() {
-        CameraController* controller = GetCameraController();
-        if (!controller) return nullptr;
-        return controller->GetCamera();
-    }
+    Camera GetCamera() { return GetCameraController().GetCamera(); }
 };
 
-class CPlayerRoot {
-public:
-    static void* GetStaticFields() {
-        uintptr_t klass = *(uintptr_t*)(Memory::Get().GetBaseAddress() + Offsets::playerRoot);
-        if (!klass) return nullptr;
-        return *(void**)(klass + Offsets::il2cppStaticField);
+// ─── Static player root helpers ───────────────────────────────────────────────
+namespace CPlayerRoot {
+    inline uintptr_t GetStaticFieldsAddr() {
+        uintptr_t klass = RPTR(Memory::Get().GetBaseAddress() + Offsets::playerRoot);
+        if (!klass) return 0;
+        return RPTR(klass + Offsets::il2cppStaticField);
     }
 
-    static CPlayer* GetLocalPlayer() {
-        void* sf = GetStaticFields();
-        if (!sf) return nullptr;
-        return *(CPlayer**)((uintptr_t)sf + Offsets::PlayerRoot::localPlayer);
+    inline CPlayer GetLocalPlayer() {
+        uintptr_t sf = GetStaticFieldsAddr();
+        if (!sf) return CPlayer(0);
+        return CPlayer(RPTR(sf + Offsets::PlayerRoot::localPlayer));
     }
 
-    static CPlayer* GetSpectatorPlayer(CPlayer* localPlayer) {
-        if (!localPlayer) return nullptr;
-        return *(CPlayer**)((uintptr_t)localPlayer + Offsets::PlayerRoot::currentSpectatorPlayer);
+    inline CPlayer GetSpectatorPlayer(CPlayer& localPlayer) {
+        if (!localPlayer.Valid()) return CPlayer(0);
+        return CPlayer(RPTR(localPlayer.GetAddress() + Offsets::PlayerRoot::currentSpectatorPlayer));
     }
 
-    static int GetAllPlayersCount() {
-        void* sf = GetStaticFields();
+    inline int GetAllPlayersCount() {
+        uintptr_t sf = GetStaticFieldsAddr();
         if (!sf) return 0;
-        IL2CPP::List<CPlayer*>* listObj = *(IL2CPP::List<CPlayer*>**)((uintptr_t)sf + Offsets::PlayerRoot::allPlayers);
-        if (!listObj) return 0;
-        int n = listObj->GetSize();
+        uintptr_t listPtr = RPTR(sf + Offsets::PlayerRoot::allPlayers);
+        if (!listPtr) return 0;
+        int n = IL2CPP::List<uintptr_t>::GetSize(listPtr);
         return (n < 0 || n > 256) ? 0 : n;
     }
 
-    static IL2CPP::Array<CPlayer*>* GetAllPlayersArray() {
-        void* sf = GetStaticFields();
-        if (!sf) return nullptr;
-        IL2CPP::List<CPlayer*>* listObj = *(IL2CPP::List<CPlayer*>**)((uintptr_t)sf + Offsets::PlayerRoot::allPlayers);
-        if (!listObj) return nullptr;
-        return listObj->GetItems();
+    // Returns the pointer to the IL2CPP items array (not dereferenced — callers use GetElement)
+    inline uintptr_t GetAllPlayersListPtr() {
+        uintptr_t sf = GetStaticFieldsAddr();
+        if (!sf) return 0;
+        return RPTR(sf + Offsets::PlayerRoot::allPlayers);
     }
-};
 
-class CHostConfig {
-public:
-    static CHostConfig* GetInstance() {
-        return IL2CPP::CallRVA<CHostConfig*>(Offsets::HostConfig::get_Instance);
+    inline CPlayer GetPlayerAt(int index) {
+        uintptr_t listPtr = GetAllPlayersListPtr();
+        uintptr_t itemsPtr = IL2CPP::List<uintptr_t>::GetItemsPtr(listPtr);
+        uintptr_t playerAddr = IL2CPP::Array<uintptr_t>::GetElement(itemsPtr, index);
+        return CPlayer(playerAddr);
     }
-};
-
-class CWeapon {
-public:
-    int GetUnChargedAmmoLeft() {
-        return IL2CPP::CallRVA<int>(Offsets::weapon_rva::get_UnChargedAmmoLeft, this);
-    }
-    int GetChargedAmmoLeft() {
-        return IL2CPP::CallRVA<int>(Offsets::weapon_rva::get_ChargedAmmoLeft, this);
-    }
-    float GetAdsPercent() {
-        return IL2CPP::CallRVA<float>(Offsets::weapon_rva::get_AdsPercent, this);
-    }
-    bool IsUseCooldown() {
-        return IL2CPP::CallRVA<bool>(Offsets::ShootWeapon_rva::get_IsUseCooldown, this);
-    }
-    void Use() {
-        IL2CPP::CallRVA<void>(Offsets::weapon_rva::Use, this);
-    }
-};
+}

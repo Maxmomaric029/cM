@@ -62,7 +62,7 @@ namespace Menu {
         ImGui::SetNextWindowSize(ImVec2(600, 450));
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alphaAnim);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::Begin("Nexus Internal V2", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
+        ImGui::Begin("Nexus External V1", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
 
         ImGui::BeginChild("##Sidebar", ImVec2(60, 450), true, ImGuiWindowFlags_NoScrollbar);
         ImGui::Spacing(); ImGui::SetCursorPosX(5);
@@ -85,10 +85,10 @@ namespace Menu {
         p.x += 20; p.y += 15;
         DrawUtils::DrawGlowText(dl, ImGui::GetFont(), 24.0f, p, IM_COL32(255, 0, 0, 255), "NEXUS", 1.2f);
         p.x += 80;
-        DrawUtils::DrawGlowText(dl, ImGui::GetFont(), 24.0f, p, IM_COL32(255, 255, 255, 255), "INTERNAL", 0.5f);
+        DrawUtils::DrawGlowText(dl, ImGui::GetFont(), 24.0f, p, IM_COL32(255, 255, 255, 255), "EXTERNAL", 0.5f);
         
         ImGui::SetCursorPosX(420); ImGui::SetCursorPosY(20);
-        ImGui::TextDisabled("V2.0.0-BS");
+        ImGui::TextDisabled("V1.0.0-EXT");
         ImGui::SetCursorPosY(55); ImGui::Separator();
         ImGui::EndChild();
 
@@ -120,12 +120,8 @@ namespace Menu {
             HotkeyButton("Aimbot Key", &Config::aimbot_key);
         }
         else if (currentTab == 3) { // EXTRA
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "WEAPON & MOVEMENT");
-            ImGui::Checkbox("No Recoil", &Config::no_recoil);
-            ImGui::Checkbox("No Shake", &Config::no_camera_shake);
-            ImGui::Checkbox("Inf Ammo", &Config::infinite_ammo);
-            ImGui::Checkbox("Rapid Fire", &Config::rapid_fire);
-            ImGui::SliderFloat("Speed Mult", &Config::movement_run_mult, 1.0f, 5.0f);
+            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "MISC");
+            ImGui::TextDisabled("(Weapon/Movement hacks require internal mode)");
         }
         else if (currentTab == 5) { // CONFIG
             if (ImGui::Button("SAVE SETTINGS", ImVec2(-1, 40))) Config::Save("nexus_config.json");
@@ -133,7 +129,7 @@ namespace Menu {
         }
         else if (currentTab == 6) { // SETTINGS
             HotkeyButton("Menu Toggle", &Config::menu_toggle_key);
-            if (ImGui::Button("UNLOAD DLL NOW", ImVec2(-1, 40))) g_UnloadRequested = true;
+            if (ImGui::Button("EXIT NEXUS", ImVec2(-1, 40))) g_ExitRequested = true;
         }
 
         ImGui::EndChild(); ImGui::EndGroup();

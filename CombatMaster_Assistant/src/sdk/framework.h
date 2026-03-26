@@ -1,50 +1,52 @@
 #pragma once
 #include "pch.h"
 
+// ─────────────────────────────────────────────────────────────────────────────
+// External IL2CPP helpers — all memory accessed via RPM through Memory::Get()
+// IL2CPP::CallRVA is NOT available in external mode.
+// ─────────────────────────────────────────────────────────────────────────────
 namespace IL2CPP {
-    // Standard IL2CPP String
-    struct String {
-        void* klass;
-        void* monitor;
-        int length;
-        wchar_t chars[1];
 
-        std::wstring ToString() {
-            if (!this || length <= 0 || length > 2048) return L"";
-            return std::wstring(chars, length);
-        }
-    };
-
-    // Standard IL2CPP Array
+    // Read a remote IL2CPP Array and access its vector field
+    // Layout: klass(8) | monitor(8) | bounds(8) | max_length(4) | pad(4) | vector[0]
     template<typename T>
     struct Array {
-        void* klass;
-        void* monitor;
-        void* bounds;
-        int max_length;
-        T vector[1];
+        static constexpr uintptr_t VECTOR_OFFSET = 0x20; // after klass/monitor/bounds/max_length
+
+        // Read a single element from the remote array pointer
+        static T GetElement(uintptr_t arrayPtr, int index) {
+            if (!arrayPtr || index < 0) return T{};
+            uintptr_t elemAddr = arrayPtr + VECTOR_OFFSET + (uintptr_t)(index * sizeof(T));
+            return Memory::Get().Read<T>(elemAddr);
+        }
+
+        static int GetLength(uintptr_t arrayPtr) {
+            if (!arrayPtr) return 0;
+            // max_length is at offset 0x18
+            int len = Memory::Get().Read<int>(arrayPtr + 0x18);
+            return (len < 0 || len > 1024) ? 0 : len;
+        }
     };
 
-    // IL2CPP List Helper (System.Collections.Generic.List<T>)
+    // Read a remote IL2CPP List<T>
+    // Layout: klass(8) | monitor(8) | _items ptr(8) | _size(4)
     template<typename T>
     struct List {
-    private:
-        // Size of the specific List object fields might vary minimally, but vector array is generally at 0x10
-        // And size/count is generally at 0x18 as per user's listSize offset
-    public:
-        int GetSize() {
-            return *(int*)((uintptr_t)this + Offsets::List::listSize);
+        static int GetSize(uintptr_t listPtr) {
+            if (!listPtr) return 0;
+            int n = Memory::Get().Read<int>(listPtr + Offsets::List::listSize);
+            return (n < 0 || n > 256) ? 0 : n;
         }
 
-        Array<T>* GetItems() {
-            return *(Array<T>**)((uintptr_t)this + 0x10);
+        // Returns pointer to the IL2CPP Array object holding items
+        static uintptr_t GetItemsPtr(uintptr_t listPtr) {
+            if (!listPtr) return 0;
+            return Memory::Get().Read<uintptr_t>(listPtr + 0x10);
+        }
+
+        static T GetElement(uintptr_t listPtr, int index) {
+            uintptr_t itemsPtr = GetItemsPtr(listPtr);
+            return Array<T>::GetElement(itemsPtr, index);
         }
     };
-
-    // Macro utility to cast and execute RVA functions
-    template<typename Ret, typename... Args>
-    inline Ret CallRVA(uintptr_t rva, Args... args) {
-        auto func = reinterpret_cast<Ret(__fastcall*)(Args...)>(Memory::Get().GetBaseAddress() + rva);
-        return func(args...);
-    }
 }

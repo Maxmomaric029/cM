@@ -1,28 +1,40 @@
 cmake_minimum_required(VERSION 3.15)
-project(Nexus_Internal CXX)
+project(Nexus_External CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Add MinHook Subdirectory
-add_subdirectory(include/MinHook)
+# ── Source files ──────────────────────────────────────────────────────────────
+# Explicitly list to avoid pulling in dllmain.cpp or hooks
+file(GLOB_RECURSE SOURCES
+    "src/main.cpp"
+    "src/memory/*.cpp"
+    "src/ui/*.cpp"
+    "src/visuals/*.cpp"
+    "src/targeting/*.cpp"
+    "src/overlay/*.cpp"
+    "src/utils/*.cpp"
+)
+file(GLOB_RECURSE HEADERS
+    "src/*.h"
+    "src/**/*.h"
+)
 
-# Source files
-file(GLOB_RECURSE SOURCES "src/*.cpp")
-file(GLOB_RECURSE HEADERS "src/*.h")
+# ── Build as standalone EXE (not a DLL) ──────────────────────────────────────
+add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS})
 
-add_library(${PROJECT_NAME} SHARED ${SOURCES} ${HEADERS})
+# ── nlohmann/json (header-only) ───────────────────────────────────────────────
+# Expects include/nlohmann/json.hpp to exist (same as before)
 
-# Include directories
+# ── Include directories ───────────────────────────────────────────────────────
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/include/imgui
     ${CMAKE_SOURCE_DIR}/include/imgui/backends
-    ${CMAKE_SOURCE_DIR}/include/MinHook/include
 )
 
-# ImGui sources
+# ── ImGui sources ─────────────────────────────────────────────────────────────
 target_sources(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/include/imgui/imgui.cpp
     ${CMAKE_SOURCE_DIR}/include/imgui/imgui_demo.cpp
@@ -33,10 +45,16 @@ target_sources(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/include/imgui/backends/imgui_impl_dx11.cpp
 )
 
-# Libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE d3d11 dwmapi minhook)
+# ── Link libraries ────────────────────────────────────────────────────────────
+# No MinHook needed — we are not hooking anything
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    d3d11
+    dxgi
+    dwmapi
+    psapi       # For EnumProcessModules
+)
 
-# Copy configuration to output directory
+# ── Post-build: copy resources + font dir ─────────────────────────────────────
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/resources

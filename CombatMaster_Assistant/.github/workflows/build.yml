@@ -1,4 +1,4 @@
-name: Build Internal DLL
+name: Build External EXE
 
 on:
   push:
@@ -12,16 +12,19 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-    - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -A x64
+    - name: Configure CMake (x64 Release)
+      run: cmake -B ${{github.workspace}}/build -A x64 -DCMAKE_BUILD_TYPE=Release
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config Release
 
-    - name: Upload Artifact
+    - name: Upload EXE artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Nexus_Internal_DLL
-        path: ${{github.workspace}}/build/Release/Nexus_Internal.dll
+        name: Nexus_External_EXE
+        path: ${{github.workspace}}/build/Release/Nexus_External.exe
+        if-no-files-found: error
+        retention-days: 30
