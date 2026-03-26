@@ -149,8 +149,11 @@ private:
                     ImFontConfig icons_config;
                     icons_config.MergeMode = true;
                     icons_config.PixelSnapH = true;
+                    icons_config.GlyphMinAdvanceX = 18.0f; // Force icons to have width
                     io.Fonts->AddFontFromFileTTF(iconsPath.c_str(), 20.0f, &icons_config, icon_ranges);
                 }
+                
+                io.Fonts->Build(); // Explicitly build fonts to catch errors
 
                 ImGui_ImplWin32_Init(renderer.window);
                 ImGui_ImplDX11_Init(renderer.pDevice, renderer.pContext);
@@ -188,7 +191,7 @@ private:
         ImDrawList* BackgroundDrawList = ImGui::GetBackgroundDrawList();
         bool inMatch = false;
 
-        // FOV circle (always draw if enabled even outside match)
+        // FOV circle
         if (Visuals::ScreenCenter.y >= 10.f && Config::aimbot_draw_fov && Config::aimbot_enabled) {
             ImU32 fovCol = IM_COL32(
                 (int)(Config::esp_color_fov[0] * 255), (int)(Config::esp_color_fov[1] * 255),
@@ -201,7 +204,6 @@ private:
         CPlayer* localPlayer = CPlayerRoot::GetLocalPlayer();
         if (!localPlayer) return;
 
-        // Spectator camera support when dead
         CPlayer* viewPlayer = localPlayer;
         if (localPlayer->IsDead()) {
             CPlayer* spectated = CPlayerRoot::GetSpectatorPlayer(localPlayer);
@@ -215,7 +217,6 @@ private:
         Matrix4x4 viewMatrix = viewCamera->GetViewMatrix();
         Vector3 localPos = viewPlayer->GetRootPosition();
 
-        // Build entity list
         IL2CPP::Array<CPlayer*>* playersArray = CPlayerRoot::GetAllPlayersArray();
         int maxPlayers = CPlayerRoot::GetAllPlayersCount();
         if (!playersArray || maxPlayers <= 0) return;
@@ -230,30 +231,22 @@ private:
             entities.push_back(player);
         }
 
-        if (!entities.empty())
-            inMatch = true;
-
-        // Update weapon hooks state
+        if (!entities.empty()) inMatch = true;
         WeaponHooks::g_InMatch = inMatch;
-
-        // Apply per-frame patches
         RecoilPatch::Apply(inMatch, Config::no_recoil, Config::no_camera_shake);
         MovementHooks::ApplyIfNeeded(inMatch);
 
-        // --- Aimbot ---
         CPlayer* closestPlayer = nullptr;
         bool aimActive = (GetAsyncKeyState(Config::aimbot_key) & 0x8000) != 0;
         if (Config::aimbot_enabled && aimActive) {
             closestPlayer = Aimbot::GetBestTarget(viewMatrix, screenWidth, screenHeight);
         }
 
-        // --- Triggerbot ---
         if (Config::triggerbot_enabled) {
             CPlayer* trigTarget = Aimbot::GetBestTarget(viewMatrix, screenWidth, screenHeight);
             Triggerbot::Run(trigTarget != nullptr && (GetAsyncKeyState(Config::aimbot_key) & 0x8000), Menu::bShowMenu);
         }
 
-        // --- ESP Rendering ---
         if (Config::esp_enabled) {
             for (auto& entity : entities) {
                 CPlayerHealth* playerHealth = entity->GetPlayerHealth();
@@ -261,8 +254,7 @@ private:
 
                 float healthPercent = playerHealth->GetHealthPercent();
                 Vector3 rootPosition = entity->GetRootPosition();
-                Vector3 headPos = rootPosition;
-                headPos.y += 1.6f;
+                Vector3 headPos = rootPosition; headPos.y += 1.6f;
 
                 float distance = Vector3(localPos.x, localPos.y, localPos.z).Distance(rootPosition);
                 if (distance / 100.f > Config::esp_max_distance) continue;
@@ -280,57 +272,16 @@ private:
                 bool isVis = entity->isVisible();
                 bool isTeam = entity->IsTeammate(localPlayer);
 
-                // Color logic with visibility check (from reference)
-                ImU32 colBox, colTracer;
+                ImU32 colBox;
                 if (Config::esp_show_team && isTeam) {
-                    if (Config::esp_visibility_check && !isVis) {
-                        colBox = IM_COL32(139, 0, 0, 200);
-                    } else {
-                        colBox = IM_COL32(
-                            (int)(Config::esp_color_team[0] * 255), (int)(Config::esp_color_team[1] * 255),
-                            (int)(Config::esp_color_team[2] * 255), (int)(Config::esp_color_team[3] * 255));
-                    }
-                    colTracer = colBox;
+                    colBox = IM_COL32((int)(Config::esp_color_team[0]*255), (int)(Config::esp_color_team[1]*255), (int)(Config::esp_color_team[2]*255), 255);
                 } else {
-                    if (Config::esp_visibility_check && !isVis) {
-                        colBox = IM_COL32(200, 30, 30, 150);
-                        colTracer = IM_COL32(200, 30, 30, 150);
-                    } else {
-                        colBox = IM_COL32(
-                            (int)(Config::esp_color_enemy[0] * 255), (int)(Config::esp_color_enemy[1] * 255),
-                            (int)(Config::esp_color_enemy[2] * 255), (int)(Config::esp_color_enemy[3] * 255));
-                        colTracer = colBox;
-                    }
+                    colBox = IM_COL32((int)(Config::esp_color_enemy[0]*255), (int)(Config::esp_color_enemy[1]*255), (int)(Config::esp_color_enemy[2]*255), 255);
                 }
 
-                // Spawn protection indicator (orange diamond)
-                if (Config::esp_spawn_protection_indicator && entity->IsInvincible()) {
-                    float cx = headW2sPos.x, cy = headW2sPos.y - 18.f, s = 10.f;
-                    BackgroundDrawList->AddQuadFilled(
-                        ImVec2(cx, cy - s), ImVec2(cx + s, cy), ImVec2(cx, cy + s), ImVec2(cx - s, cy),
-                        IM_COL32(255, 165, 0, 255));
-                }
+                if (Config::esp_boxes) ESP::DrawCornerBox(boxX, boxY, width, height, colBox, Config::esp_box_thickness);
+                if (Config::esp_health) ESP::DrawHealthBar(boxX - 6, boxY, 3, height, healthPercent, 100.0f);
 
-                // Snaplines
-                if (Config::esp_lines) {
-                    ImVec2 origin;
-                    if (Config::esp_snapline_origin == 0) origin = ImVec2(Visuals::ScreenCenter.x, 0.f);
-                    else if (Config::esp_snapline_origin == 1) origin = ImVec2(Visuals::ScreenCenter.x, Visuals::ScreenCenter.y);
-                    else origin = ImVec2(Visuals::ScreenCenter.x, Visuals::ScreenCenter.y * 2.f);
-                    BackgroundDrawList->AddLine(origin, ImVec2(headW2sPos.x, headW2sPos.y), colTracer, 1.0f);
-                }
-
-                // Boxes
-                if (Config::esp_boxes) {
-                    ESP::DrawCornerBox(boxX, boxY, width, height, colBox, Config::esp_box_thickness);
-                }
-
-                // Health bar
-                if (Config::esp_health) {
-                    ESP::DrawHealthBar(boxX - 6, boxY, 3, height, healthPercent, 100.0f);
-                }
-
-                // Names & Distance
                 if (Config::esp_names || Config::esp_distance) {
                     char line[128] = "";
                     if (Config::esp_names) {
@@ -351,52 +302,16 @@ private:
                     }
                     if (line[0]) {
                         ImVec2 ts = ImGui::CalcTextSize(line);
-                        BackgroundDrawList->AddText(
-                            ImVec2(headW2sPos.x - ts.x * 0.5f, headW2sPos.y - ts.y - 2.f),
-                            IM_COL32(255, 255, 255, 255), line);
+                        DrawUtils::DrawGlowText(BackgroundDrawList, ImGui::GetFont(), ImGui::GetFontSize(), 
+                            ImVec2(headW2sPos.x - ts.x * 0.5f, headW2sPos.y - ts.y - 4.f), 
+                            IM_COL32(255, 255, 255, 255), line, 0.4f);
                     }
-                }
-
-                // Tracers
-                if (Config::esp_tracers) {
-                    ImVec2 origin;
-                    if (Config::esp_tracer_origin == 0) origin = ImVec2(Visuals::ScreenCenter.x, 0.f);
-                    else if (Config::esp_tracer_origin == 1) origin = ImVec2(Visuals::ScreenCenter.x, Visuals::ScreenCenter.y);
-                    else origin = ImVec2(Visuals::ScreenCenter.x, (float)screenHeight);
-                    BackgroundDrawList->AddLine(origin, ImVec2(headW2sPos.x, headW2sPos.y), colTracer, 1.2f);
                 }
             }
         }
 
-        // --- Aimbot Execution & Target Visuals ---
         if (Config::aimbot_enabled && closestPlayer) {
             Aimbot::RunAimbot(closestPlayer, viewMatrix, ImGui::GetIO().DeltaTime);
-
-            // Target tracer & orb
-            Vector3 targetPos = closestPlayer->GetRootPosition();
-            int bone = Config::aimbot_bone;
-            if (Config::aimbot_follow_crouched && closestPlayer->isCrouch()) bone = 2;
-            if (bone == 0) targetPos.y += 1.6f;
-            else if (bone == 1) targetPos.y += 1.35f;
-            else if (bone == 2) targetPos.y += 1.1f;
-            else targetPos.y += 0.8f;
-
-            Vector2 outPos;
-            if (Visuals::WorldToScreen(targetPos, &outPos, viewMatrix)) {
-                if (Config::aimbot_target_tracer) {
-                    BackgroundDrawList->AddLine(
-                        ImVec2(Visuals::ScreenCenter.x, Visuals::ScreenCenter.y),
-                        ImVec2(outPos.x, outPos.y),
-                        IM_COL32((int)(Config::esp_color_enemy[0]*255), (int)(Config::esp_color_enemy[1]*255),
-                                 (int)(Config::esp_color_enemy[2]*255), (int)(Config::esp_color_enemy[3]*255)), 2.5f);
-                }
-                if (Config::aimbot_target_orb) {
-                    ImU32 colOrb = IM_COL32(
-                        (int)(Config::esp_color_target_orb[0]*255), (int)(Config::esp_color_target_orb[1]*255),
-                        (int)(Config::esp_color_target_orb[2]*255), (int)(Config::esp_color_target_orb[3]*255));
-                    BackgroundDrawList->AddCircleFilled(ImVec2(outPos.x, outPos.y), 8.f, colOrb);
-                }
-            }
         }
     }
 
@@ -407,81 +322,36 @@ public:
     }
 
     void Init() {
-        if (MH_Initialize() != MH_OK) {
-            Logger::Error("MinHook failed to initialize");
-            return;
-        }
-
-        // Initialize weapon hooks
-        if (!WeaponHooks::Init()) {
-            Logger::Log("Warning: Some weapon hooks failed to initialize");
-        }
+        if (MH_Initialize() != MH_OK) return;
+        WeaponHooks::Init();
 
         D3D_FEATURE_LEVEL featureLevel;
         const D3D_FEATURE_LEVEL featureLevels[] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
-
-        DXGI_SWAP_CHAIN_DESC sd;
-        ZeroMemory(&sd, sizeof(sd));
-        sd.BufferCount = 2;
-        sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        sd.BufferDesc.Width = 2;
-        sd.BufferDesc.Height = 2;
+        DXGI_SWAP_CHAIN_DESC sd; ZeroMemory(&sd, sizeof(sd));
+        sd.BufferCount = 2; sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        sd.BufferDesc.Width = 2; sd.BufferDesc.Height = 2;
         sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        sd.SampleDesc.Count = 1; sd.Windowed = TRUE; sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
-        // Create hidden window for vtable discovery
-        WNDCLASSEXA wc = {};
-        wc.cbSize = sizeof(wc);
-        wc.style = CS_CLASSDC;
-        wc.lpfnWndProc = DefWindowProcA;
-        wc.hInstance = GetModuleHandleA(nullptr);
-        wc.lpszClassName = "NexusHook";
-        RegisterClassExA(&wc);
-        HWND hwnd = CreateWindowExA(0, "NexusHook", "NexusHook", WS_OVERLAPPEDWINDOW,
-            100, 100, 100, 100, nullptr, nullptr, wc.hInstance, nullptr);
+        WNDCLASSEXA wc = {}; wc.cbSize = sizeof(wc); wc.style = CS_CLASSDC;
+        wc.lpfnWndProc = DefWindowProcA; wc.hInstance = GetModuleHandleA(nullptr);
+        wc.lpszClassName = "NexusHook"; RegisterClassExA(&wc);
+        HWND hwnd = CreateWindowExA(0, "NexusHook", "NexusHook", WS_OVERLAPPEDWINDOW, 100, 100, 100, 100, nullptr, nullptr, wc.hInstance, nullptr);
         sd.OutputWindow = hwnd;
-        sd.SampleDesc.Count = 1;
-        sd.Windowed = TRUE;
-        sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
-        IDXGISwapChain* swapChain = nullptr;
-        ID3D11Device* device = nullptr;
-        ID3D11DeviceContext* context = nullptr;
-
-        if (FAILED(D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, featureLevels, 2,
-                D3D11_SDK_VERSION, &sd, &swapChain, &device, &featureLevel, &context)))
-        {
-            Logger::Error("Failed to create dummy D3D11 device.");
-            DestroyWindow(hwnd);
-            UnregisterClassA("NexusHook", wc.hInstance);
-            return;
+        IDXGISwapChain* swapChain = nullptr; ID3D11Device* device = nullptr; ID3D11DeviceContext* context = nullptr;
+        if (FAILED(D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, featureLevels, 2, D3D11_SDK_VERSION, &sd, &swapChain, &device, &featureLevel, &context))) {
+            DestroyWindow(hwnd); UnregisterClassA("NexusHook", wc.hInstance); return;
         }
 
         void** pVTable = *reinterpret_cast<void***>(swapChain);
         void* targetPresent = pVTable[8];
+        swapChain->Release(); device->Release(); context->Release();
+        DestroyWindow(hwnd); UnregisterClassA("NexusHook", wc.hInstance);
 
-        swapChain->Release();
-        device->Release();
-        context->Release();
-        DestroyWindow(hwnd);
-        UnregisterClassA("NexusHook", wc.hInstance);
-
-        if (MH_CreateHook(targetPresent, &hkPresent, reinterpret_cast<void**>(&oPresent)) != MH_OK) {
-            Logger::Error("Failed to create hook for Present");
-            return;
-        }
-
-        if (MH_EnableHook(targetPresent) != MH_OK) {
-            Logger::Error("Failed to enable hook for Present");
-            return;
-        }
-
-        Logger::Log("DX11 Present hooked successfully!");
-
-        // Wait for unload signal instead of infinite loop
-        while (!g_UnloadRequested) {
-            Sleep(100);
-        }
-        // Small delay to let the unload in hkPresent complete
+        MH_CreateHook(targetPresent, &hkPresent, reinterpret_cast<void**>(&oPresent));
+        MH_EnableHook(targetPresent);
+        while (!g_UnloadRequested) Sleep(100);
         Sleep(500);
     }
 };
